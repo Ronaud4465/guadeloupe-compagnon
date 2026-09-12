@@ -211,6 +211,7 @@ function locate(cb){
    p=>{
      S.pos={lat:p.coords.latitude,lng:p.coords.longitude,accuracy:Math.round(p.coords.accuracy),at:Date.now()};save();
      let m=`GPS actif — précision annoncée ±${S.pos.accuracy} m`;setGps(m,true);
+     const nhs=document.getElementById("nearHikeStatus"); if(nhs) nhs.textContent=`GPS accessible · ±${S.pos.accuracy} m`;
      if(cb)cb(S.pos);
    },
    e=>{let m=gpsMessage(e);setGps(m,false);openModal("Diagnostic GPS",m)},
@@ -232,7 +233,9 @@ const useGpsIgn=document.getElementById('ignUseGps'); if(useGpsIgn)useGpsIgn.onc
 
 const navPrefEl=document.getElementById("navPreference");
 if(navPrefEl){navPrefEl.value=S.navPreference||"ask";navPrefEl.onchange=()=>{S.navPreference=navPrefEl.value;save();openModal("Navigation enregistrée",navPrefEl.value==="google"?"Google Maps sera utilisé par défaut.":navPrefEl.value==="waze"?"Waze sera utilisé par défaut.":"L’application vous demandera à chaque trajet.")}}
-setupNearbyHikes();renderHomes();renderToday();renderPlaces();renderHistory();renderHikes();
+setupNearbyHikes();
+if(S.pos){const nhs=document.getElementById("nearHikeStatus");if(nhs)nhs.textContent="Dernière position disponible · appuyez sur Rechercher pour actualiser";}
+renderHomes();renderToday();renderPlaces();renderHistory();renderHikes();
 if("serviceWorker"in navigator)navigator.serviceWorker.register("/sw.js");
 
 
