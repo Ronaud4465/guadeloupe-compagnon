@@ -3,7 +3,7 @@
 <meta name="theme-color" content="#0a675e"><title>Guadeloupe Compagnon</title>
 <link rel="manifest" href="/manifest.webmanifest"><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 </head><body>
-<header><div><b>🌴 Guadeloupe 2027</b><small>1 → 22 janvier · compagnon de voyage · <span id="appVersion">v0.4.1</span></small></div><button id="locate" title="État GPS">📍</button></header>
+<header><div><b>🌴 Guadeloupe 2027</b><small>1 → 22 janvier · compagnon de voyage · <span id="appVersion">v0.4.3</span></small></div><button id="locate" title="État GPS">📍</button></header>
 <nav>
 <button data-tab="today" class="active">☀️<span>Aujourd’hui</span></button>
 <button data-tab="discover">🌴<span>Découvrir</span></button>
@@ -37,7 +37,11 @@
 <button data-near="restaurant créole">🍴<b>Manger</b></button><button data-near="bar local">🍹<b>Boire</b></button>
 </div>
 <div class="card gem"><h2>💎 Pépite à proximité</h2><p id="gemText">Activez votre position. L’app signalera uniquement les lieux vraiment remarquables à très faible détour.</p><button class="primary" id="checkGem">Chercher maintenant</button></div>
-<div class="card"><h2>⭐ Recherche libre autour de moi</h2><input id="nearQuery" placeholder="Ex. marché nocturne, bokit, artisan…"><button class="primary wide" id="nearSearch">Chercher à proximité</button></div><div class="sectionHead"><h1>🥾 Randonnées & promenades</h1><p>Carte IGN officielle, GPS, départ et difficulté. Appuyez sur <b>🗺️ Carte IGN</b> sous la randonnée choisie.</p></div><div id="hikeList"></div><div class="card"><p class="meta">La carte utilise le fond Plan IGN de la Géoplateforme. Pour préparer des zones hors connexion, l’application mobile Cartes IGN reste recommandée.</p><button class="ghost wide" onclick="location.href='https://cartes.gouv.fr/'">Ouvrir cartes.gouv.fr</button></div>
+<div class="card"><h2>⭐ Recherche libre autour de moi</h2><input id="nearQuery" placeholder="Ex. marché nocturne, bokit, artisan…"><button class="primary wide" id="nearSearch">Chercher à proximité</button></div>
+<div class="sectionHead"><h1>🥾 Promenades autour de moi</h1><p>Utilise votre GPS pour classer les promenades connues autour de votre position, même lors d’un arrêt imprévu.</p></div>
+<div class="card"><div class="titleRow"><h2>📍 Rayon de recherche</h2><span id="nearHikeStatus" class="meta">GPS requis</span></div><div class="radiusRow"><button class="ghost hikeRadius active" data-radius="2">2 km</button><button class="ghost hikeRadius" data-radius="5">5 km</button><button class="ghost hikeRadius" data-radius="10">10 km</button><button class="ghost hikeRadius" data-radius="20">20 km</button></div><button id="nearHikesBtn" class="primary wide">🥾 Voir les promenades autour de moi</button><p class="meta">Les distances affichées sont approximatives. Le bouton 🚗 ouvre votre navigation préférée pour le trajet réel jusqu’au départ.</p></div>
+<div id="nearHikeList"></div>
+<div class="sectionHead"><h1>🗺️ Toutes les randonnées & promenades</h1><p>Carte IGN officielle, GPS, départ et difficulté. Appuyez sur <b>🗺️ Carte IGN</b> sous la randonnée choisie.</p></div><div id="hikeList"></div><div class="card"><p class="meta">La carte utilise le fond Plan IGN de la Géoplateforme. Pour préparer des zones hors connexion, l’application mobile Cartes IGN reste recommandée.</p><button class="ghost wide" onclick="location.href='https://cartes.gouv.fr/'">Ouvrir cartes.gouv.fr</button></div>
 </section>
 
 
@@ -118,7 +122,7 @@
 <div class="card"><h2>🏠 Base utilisée pour les essais</h2><select id="homeOverride"><option value="auto">Automatique selon la date</option></select><p class="meta">Avant le départ, choisissez une base pour simuler les journées. Pendant le voyage, laissez « Automatique ».</p></div>
 <div id="homes"></div>
 <div class="card"><h2>🚗 Navigation</h2><p>Choisissez l’application utilisée pour les trajets routiers. Les randonnées restent sur la carte IGN.</p><select id="navPreference"><option value="ask">Toujours demander</option><option value="google">Google Maps</option><option value="waze">Waze</option></select><p class="meta">Pour un parcours avec plusieurs étapes, Google Maps peut afficher tout l’itinéraire. Avec Waze, le compagnon vous guide étape par étape.</p></div>
-<div class="card updateCard"><div class="titleRow"><h2>🔄 Mise à jour</h2><span class="versionBadge">v0.4.1</span></div><p id="updateText">L’application vérifie automatiquement les nouvelles versions.</p><button id="checkUpdate" class="ghost wide">Vérifier maintenant</button></div>
+<div class="card updateCard"><div class="titleRow"><h2>🔄 Mise à jour</h2><span class="versionBadge">v0.4.3</span></div><p id="updateText">L’application vérifie automatiquement les nouvelles versions.</p><button id="checkUpdate" class="ghost wide">Vérifier maintenant</button></div>
 <div class="card"><h2>🔔 Notifications</h2><p>Autorisez-les pour les alertes utiles pendant que l’application est utilisée. Les notifications push en arrière-plan seront la prochaine étape.</p><button id="notify" class="primary">Autoriser les notifications</button></div>
 <div class="card"><h2>Règles de l’assistant</h2><p>✓ Le programme choisi reste prioritaire.<br>✓ Aucune visite n’est remplacée sans votre accord.<br>✓ En cas de retard : continuer, reporter ou voir une alternative.<br>✓ Une visite reportée n’est jamais supprimée.<br>✓ Les 💎 sont rares et réservées aux vraies pépites.<br>✓ Une visite terminée passe dans l’historique : elle est grisée ou masquée, jamais perdue.<br>✓ Les propositions restent dans le secteur du logement actif.<br>✓ La météo aide à choisir le type de journée sans traverser l’île.<br>✓ Par défaut : 1 activité principale + 1 complément proche maximum.</p></div>
 </section>

@@ -1,25 +1,12 @@
-# Guadeloupe Compagnon V0.4.0
+# Guadeloupe Compagnon v0.4.3
 
-Version groupée afin d'éviter les mises à jour successives.
+Mise à jour des fiches randonnée : durée, distance et difficulté uniquement lorsqu’une source identifiable est disponible.
 
-Nouveautés principales :
-- logements éditables (nom, adresse, dates, GPS) + base de simulation avant le départ ;
-- priorité stricte au secteur du logement actif ;
-- classement Découvrir : idéal ici / mieux depuis une autre base / hors secteur ;
-- météo réelle du secteur via Open-Meteo, sans traverser l'île pour chercher le soleil ;
-- distinction activités à garder pour le soleil / adaptées aux journées maussades ;
-- proposition de journée réaliste : 1 activité principale + au maximum 1 complément vraiment proche ;
-- parcours lisible logement → X → Y → logement avec km, temps routier estimé et temps conseillé sur place ;
-- adaptation Fatigue / journée maussade / plage / retour plus tôt ;
-- possibilité de refaire une visite déjà faite sans effacer son historique ;
-- conservation IGN, coffre chiffré, scanner recto-verso, PIN et mises à jour automatiques.
+- Soufrière : 4 h 30, 6 km A/R — Rando Guadeloupe / Parc national
+- Chutes du Carbet : durées distinctes selon la chute — Parc national
+- Boucle Sofaïa / Trois Cornes : 2 h, 3,2 km — Rando Guadeloupe
+- Cascade aux Écrevisses : 30 min, 415 m — Rando Guadeloupe
+- Cascade Paradis : 2–3 h, env. 5 km — source guide local
+- Route de la Traversée : aucune durée globale inventée ; « durée non renseignée » tant qu’un sentier précis n’est pas choisi.
 
-Note : les temps routiers affichés dans l'app sont des estimations pratiques. La navigation Google Maps reste la référence pour le trafic réel au moment du départ.
-
-
-## V0.4.1
-- Choix de navigation : Google Maps, Waze ou toujours demander.
-- Préférence mémorisée dans Voyage.
-- Retour logement utilise la navigation choisie.
-- Parcours multi-étapes : Google Maps affiche le parcours complet ; Waze fonctionne étape par étape.
-- Accès IGN clarifié : Autour > Randonnées & promenades > Carte IGN.
+Le rayon 2/5/10/20 km reste distinct de la durée de marche.

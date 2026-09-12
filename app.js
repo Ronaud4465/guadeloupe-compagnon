@@ -44,7 +44,7 @@ function markDone(id){
  S.done=[...new Set([...(S.done||[]),id])];
  S.today=(S.today||[]).filter(x=>x!==id);
  S.history=[{id,at:new Date().toISOString()},...(S.history||[]).filter(x=>x.id!==id)];
- save();renderToday();renderPlaces();renderHistory();renderHikes();
+ save();renderToday();renderPlaces();renderHistory();renderHikes();if(S.pos)renderNearbyHikes(S.pos);if(S.pos)renderNearbyHikes(S.pos);
 }
 function restorePlace(id){
  S.done=(S.done||[]).filter(x=>x!==id);
@@ -99,15 +99,28 @@ routeBtn.onclick=()=>{let a=(S.today||[]).filter(id=>!isDone(id)).map(id=>all().
 homeBtn.onclick=()=>{let h=activeHome();navigateTo(`${h.lat},${h.lng}`)}
 
 const HIKES={
- "soufriere":{difficulty:"Soutenu",duration:"3 h 30–4 h 30",distance:"env. 6 km A/R",note:"Sommet exposé : météo et accès à contrôler le matin."},
- "carbet":{difficulty:"Modéré à soutenu",duration:"2 h 30–4 h",distance:"selon chute choisie",note:"Sentiers humides et glissants possibles."},
- "trois-cornes":{difficulty:"Modéré",duration:"2 h 30–3 h 30",distance:"boucle / A-R selon accès",note:"Forêt tropicale : chaussures adaptées."},
- "paradis":{difficulty:"Modéré",duration:"2–3 h",distance:"selon point de départ",note:"Accès à confirmer selon état du sentier."},
- "traversee":{difficulty:"Facile à modéré",duration:"demi-journée",distance:"plusieurs sentiers",note:"Maison de la Forêt et départs de balades."},
- "ecrevisses":{difficulty:"Facile",duration:"45 min–1 h 15",distance:"courte promenade",note:"Accès aménagé, fréquenté."}
+ "soufriere":{difficulty:"Difficile",duration:"4 h 30",distance:"6 km A/R",note:"Durée/distance : Rando Guadeloupe (Parc national). Sommet exposé : météo et accès à contrôler le matin.",source:"Rando Guadeloupe"},
+ "carbet":{difficulty:"Selon la chute",duration:"2e chute : 45 min A/R · 1re chute : 3 h A/R",distance:"selon chute choisie",note:"Durées officielles du Parc national. Le dernier tronçon vers la 3e chute est interdit ; l’accès varie selon l’itinéraire.",source:"Parc national de la Guadeloupe"},
+ "trois-cornes":{difficulty:"Facile",duration:"2 h",distance:"3,2 km · boucle",note:"Boucle de Sofaïa / Trois Cornes : données Rando Guadeloupe.",source:"Rando Guadeloupe"},
+ "paradis":{difficulty:"Facile avec passages techniques",duration:"2–3 h A/R",distance:"env. 5 km A/R",note:"Durée documentée par un guide local ; deux traversées de rivière. À éviter par temps de pluie.",source:"Gwadaexplo"},
+ "traversee":{difficulty:"Variable",duration:"Durée : non renseignée",distance:"plusieurs sentiers",note:"La Route de la Traversée regroupe plusieurs départs : la durée dépend du sentier choisi.",source:""},
+ "ecrevisses":{difficulty:"Très facile",duration:"30 min A/R",distance:"415 m A/R",note:"Itinéraire aménagé depuis le parking ; données Rando Guadeloupe.",source:"Rando Guadeloupe"}
 };
 let ignMap=null,ignMarker=null,gpsMarker=null;
-function hikeInline(p){const h=HIKES[p.id];return `<div class="hikeBox"><b>🥾 Promenade / randonnée</b><div>${h.distance} · ${h.duration} · ${h.difficulty}</div><small>${h.note}</small><div class="placeBtns"><button class="ignBtn" onclick="openIgnMap('${p.id}')">🗺️ Carte IGN</button><button class="ghost" onclick="navigateTo('${p.lat},${p.lng}')">🚗 Parking / départ</button></div></div>`}
+let nearHikeRadius=10;
+function approxDriveMinutes(kmVal){return Math.max(3,Math.round((kmVal*1.22)/38*60));}
+function renderNearbyHikes(pos){
+ const el=document.getElementById("nearHikeList"), status=document.getElementById("nearHikeStatus"); if(!el)return;
+ const rows=Object.keys(HIKES).map(id=>all().find(p=>p.id===id)).filter(Boolean).map(p=>({...p,nearKm:km(pos,p)})).filter(p=>p.nearKm<=nearHikeRadius).sort((x,y)=>x.nearKm-y.nearKm);
+ if(status)status.textContent=`${rows.length} promenade${rows.length>1?'s':''} dans ${nearHikeRadius} km`;
+ if(!rows.length){el.innerHTML=`<div class="card"><p>Aucune promenade de notre sélection dans un rayon de ${nearHikeRadius} km.</p><p class="meta">Augmentez le rayon ou utilisez la recherche libre. La base de promenades sera enrichie au fur et à mesure.</p></div>`;return;}
+ el.innerHTML=rows.map(p=>{const h=HIKES[p.id], mins=approxDriveMinutes(p.nearKm);return `<div class="card nearbyHike ${isDone(p.id)?'completedPlace':''}"><div class="titleRow"><h2>${isDone(p.id)?'✓ ':''}🥾 ${p.name}</h2><span class="distanceBadge">${p.nearKm<1?Math.round(p.nearKm*1000)+' m':p.nearKm.toFixed(1)+' km'}</span></div><p><b>🚗 env. ${mins} min jusqu’au départ</b> · estimation</p><div class="meta">${h.distance} · ${h.duration} · ${h.difficulty}</div><p>${h.note}</p>${h.source?`<div class="sourceTag">Source : ${h.source}</div>`:''}<div class="placeBtns"><button class="ignBtn" onclick="openIgnMap('${p.id}')">🗺️ Voir sur IGN</button><button class="primary" onclick="navigateTo('${p.lat},${p.lng}')">🚗 Aller au départ</button>${isDone(p.id)?`<button class="ghost" onclick="restorePlace('${p.id}')">↻ Refaire</button>`:`<button class="ghost" onclick="toggleDay('${p.id}')">+ Ajouter aujourd’hui</button>`}</div></div>`}).join('');
+}
+function setupNearbyHikes(){
+ const btn=document.getElementById('nearHikesBtn'); if(btn)btn.onclick=()=>locate(pos=>renderNearbyHikes(pos));
+ document.querySelectorAll('.hikeRadius').forEach(b=>b.onclick=()=>{nearHikeRadius=+b.dataset.radius;document.querySelectorAll('.hikeRadius').forEach(x=>x.classList.toggle('active',x===b));if(S.pos)renderNearbyHikes(S.pos)});
+}
+function hikeInline(p){const h=HIKES[p.id];return `<div class="hikeBox"><b>🥾 Promenade / randonnée</b><div>${h.distance} · ${h.duration} · ${h.difficulty}</div><small>${h.note}</small>${h.source?`<div class="sourceTag">Source : ${h.source}</div>`:''}<div class="placeBtns"><button class="ignBtn" onclick="openIgnMap('${p.id}')">🗺️ Carte IGN</button><button class="ghost" onclick="navigateTo('${p.lat},${p.lng}')">🚗 Parking / départ</button></div></div>`}
 function renderHikes(){
  const el=document.getElementById('hikeList'); if(!el)return;
  el.innerHTML=Object.keys(HIKES).map(id=>all().find(p=>p.id===id)).filter(Boolean).map(p=>`<div class="card ${isDone(p.id)?'completedPlace':''}"><div class="titleRow"><h2>${isDone(p.id)?'✓ ':''}🥾 ${p.name}</h2>${isDone(p.id)?'<span class="doneBadge">FAIT</span>':''}</div>${hikeInline(p)}${!isDone(p.id)?`<button class="doneBtn wide" onclick="markDone('${p.id}')">✓ Marquer comme fait</button>`:`<button class="ghost wide" onclick="restorePlace('${p.id}')">↩ Remettre à visiter</button>`}</div>`).join('');
@@ -168,7 +181,7 @@ const useGpsIgn=document.getElementById('ignUseGps'); if(useGpsIgn)useGpsIgn.onc
 
 const navPrefEl=document.getElementById("navPreference");
 if(navPrefEl){navPrefEl.value=S.navPreference||"ask";navPrefEl.onchange=()=>{S.navPreference=navPrefEl.value;save();openModal("Navigation enregistrée",navPrefEl.value==="google"?"Google Maps sera utilisé par défaut.":navPrefEl.value==="waze"?"Waze sera utilisé par défaut.":"L’application vous demandera à chaque trajet.")}}
-renderHomes();renderToday();renderPlaces();renderHistory();renderHikes();
+setupNearbyHikes();renderHomes();renderToday();renderPlaces();renderHistory();renderHikes();
 if("serviceWorker"in navigator)navigator.serviceWorker.register("/sw.js");
 
 
