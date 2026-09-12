@@ -3,7 +3,7 @@
 <meta name="theme-color" content="#0a675e"><title>Guadeloupe Compagnon</title>
 <link rel="manifest" href="/manifest.webmanifest"><link rel="stylesheet" href="/style.css?v=053"><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 </head><body>
-<header><div><b>🌴 Guadeloupe 2027</b><small>1 → 22 janvier · compagnon de voyage · <span id="appVersion"><span data-app-version>v0.5.6</span></span></small></div><button id="locate" title="État GPS">📍</button></header>
+<header><div><b>🌴 Guadeloupe 2027</b><small>1 → 22 janvier · compagnon de voyage · <span id="appVersion"><span data-app-version>v0.5.8</span></span></small></div><button id="locate" title="État GPS">📍</button></header>
 <nav>
 <button data-tab="today" class="active">☀️<span>Aujourd’hui</span></button>
 <button data-tab="discover">🌴<span>Découvrir</span></button>
@@ -122,7 +122,7 @@
 <div class="card"><h2>🏠 Base utilisée pour les essais</h2><select id="homeOverride"><option value="auto">Automatique selon la date</option></select><p class="meta">Avant le départ, choisissez une base pour simuler les journées. Pendant le voyage, laissez « Automatique ».</p></div>
 <div id="homes"></div>
 <div class="card"><h2>🚗 Navigation</h2><p>Choisissez l’application utilisée pour les trajets routiers. Les randonnées restent sur la carte IGN.</p><select id="navPreference"><option value="ask">Toujours demander</option><option value="google">Google Maps</option><option value="waze">Waze</option></select><p class="meta">Pour un parcours avec plusieurs étapes, Google Maps peut afficher tout l’itinéraire. Avec Waze, le compagnon vous guide étape par étape.</p></div>
-<div class="card updateCard"><div class="titleRow"><h2>🔄 Mise à jour</h2><span class="versionBadge"><span data-app-version>v0.5.6</span></span></div><p id="updateText">L’application vérifie automatiquement les nouvelles versions.</p><button id="checkUpdate" class="ghost wide">Vérifier maintenant</button></div>
+<div class="card updateCard"><div class="titleRow"><h2>🔄 Mise à jour</h2><span class="versionBadge"><span data-app-version>v0.5.8</span></span></div><p id="updateText">L’application vérifie automatiquement les nouvelles versions.</p><button id="checkUpdate" class="ghost wide">Vérifier maintenant</button></div>
 <div class="card"><h2>🔔 Notifications</h2><p>Autorisez-les pour les alertes utiles pendant que l’application est utilisée. Les notifications push en arrière-plan seront la prochaine étape.</p><button id="notify" class="primary">Autoriser les notifications</button></div>
 <div class="card"><h2>Règles de l’assistant</h2><p>✓ Le programme choisi reste prioritaire.<br>✓ Aucune visite n’est remplacée sans votre accord.<br>✓ En cas de retard : continuer, reporter ou voir une alternative.<br>✓ Une visite reportée n’est jamais supprimée.<br>✓ Les 💎 sont rares et réservées aux vraies pépites.<br>✓ Une visite terminée passe dans l’historique : elle est grisée ou masquée, jamais perdue.<br>✓ Les propositions restent dans le secteur du logement actif.<br>✓ La météo aide à choisir le type de journée sans traverser l’île.<br>✓ Par défaut : 1 activité principale + 1 complément proche maximum.</p></div>
 </section>
