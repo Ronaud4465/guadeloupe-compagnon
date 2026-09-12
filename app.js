@@ -48,8 +48,33 @@ optimize.onclick=analyze;delay30.onclick=()=>{S.delay=30;save();analyze()};delay
 routeBtn.onclick=()=>{let a=S.today.map(id=>all().find(p=>p.id===id)).filter(Boolean);if(!a.length)return openModal("Parcours","Choisissez au moins une visite.");let d=a.at(-1),wp=a.slice(0,-1).map(p=>p.lat?`${p.lat},${p.lng}`:p.query||p.name).join("|");let u=maps(d.lat?`${d.lat},${d.lng}`:d.query||d.name);if(wp)u+="&waypoints="+encodeURIComponent(wp);location.href=u}
 homeBtn.onclick=()=>{let h=activeHome();location.href=maps(`${h.lat},${h.lng}`)}
 
-function locate(cb){if(!navigator.geolocation)return openModal("Position","Géolocalisation non disponible.");navigator.geolocation.getCurrentPosition(p=>{S.pos={lat:p.coords.latitude,lng:p.coords.longitude,at:Date.now()};save();locate.textContent="●";if(cb)cb()},e=>openModal("Position","Autorisez la localisation dans le navigateur pour utiliser cette fonction."),{enableHighAccuracy:true,timeout:10000})}
-document.getElementById("locate").onclick=()=>locate(()=>openModal("Position","Position actualisée."));
+function gpsMessage(e){
+ if(!e)return "Erreur GPS inconnue.";
+ if(e.code===1)return "Accès GPS refusé par Safari pour ce site. Vérifiez Safari > Réglages du site web > Localisation.";
+ if(e.code===2)return "L’iPhone n’arrive pas à déterminer la position pour le moment.";
+ if(e.code===3)return "La recherche de position a pris trop de temps. Réessayez à l’extérieur ou près d’une fenêtre.";
+ return "Erreur GPS : "+(e.message||"inconnue");
+}
+function setGps(text,ok=false){
+ const el=document.getElementById("gpsText"); if(el)el.textContent=text;
+ const top=document.getElementById("locate"); if(top){top.textContent=ok?"🟢":"📍";top.title=text}
+}
+function locate(cb){
+ if(!window.isSecureContext){let m="Le GPS exige une connexion HTTPS sécurisée.";setGps(m);return openModal("GPS",m)}
+ if(!("geolocation" in navigator)){let m="La géolocalisation n’est pas disponible dans ce navigateur.";setGps(m);return openModal("GPS",m)}
+ setGps("Recherche de votre position…");
+ navigator.geolocation.getCurrentPosition(
+   p=>{
+     S.pos={lat:p.coords.latitude,lng:p.coords.longitude,accuracy:Math.round(p.coords.accuracy),at:Date.now()};save();
+     let m=`GPS actif — précision annoncée ±${S.pos.accuracy} m`;setGps(m,true);
+     if(cb)cb(S.pos);
+   },
+   e=>{let m=gpsMessage(e);setGps(m,false);openModal("Diagnostic GPS",m)},
+   {enableHighAccuracy:false,timeout:20000,maximumAge:60000}
+ );
+}
+document.getElementById("locate").onclick=()=>locate(()=>openModal("GPS actif","Votre position est maintenant accessible à Guadeloupe 2027."));
+document.getElementById("gpsTest").onclick=()=>locate();
 document.querySelectorAll("[data-near]").forEach(b=>b.onclick=()=>locate(()=>location.href=searchMaps(b.dataset.near)));
 nearSearch.onclick=()=>{if(!nearQuery.value.trim())return;locate(()=>location.href=searchMaps(nearQuery.value.trim()))}
 checkGem.onclick=()=>locate(()=>{let pos=S.pos,cands=all().filter(p=>p.lat&&p.priority==="gem").map(p=>({...p,d:km(pos,p)})).filter(p=>p.d<1.2).sort((a,b)=>a.d-b.d);if(!cands.length)gemText.textContent="Aucune 💎 de notre sélection à moins d’environ 1,2 km. Pas de notification inutile.";else{let p=cands[0];gemText.innerHTML=`💎 <b>${p.name}</b> est à environ ${Math.round(p.d*1000)} m. ${p.note}`}})
@@ -59,3 +84,7 @@ function renderHomes(){homes.innerHTML=S.homes.map((h,i)=>`<div class="card"><h2
 notify.onclick=async()=>{if(!("Notification"in window))return openModal("Notifications","Ce navigateur ne prend pas en charge les notifications web.");let r=await Notification.requestPermission();openModal("Notifications",r==="granted"?"Notifications autorisées.":"Autorisation non accordée.")}
 renderHomes();renderToday();renderPlaces();
 if("serviceWorker"in navigator)navigator.serviceWorker.register("/sw.js");
+
+window.addEventListener("load",()=>{
+ if(S.pos && Date.now()-S.pos.at<3600000) setGps(`Dernière position connue — précision ±${S.pos.accuracy||"?"} m`,true);
+});

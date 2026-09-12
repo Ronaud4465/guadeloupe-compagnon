@@ -3,7 +3,7 @@
 <meta name="theme-color" content="#0a675e"><title>Guadeloupe Compagnon</title>
 <link rel="manifest" href="/manifest.webmanifest"><link rel="stylesheet" href="/style.css">
 </head><body>
-<header><div><b>🌴 Guadeloupe 2027</b><small>1 → 22 janvier · compagnon de voyage</small></div><button id="locate">◎</button></header>
+<header><div><b>🌴 Guadeloupe 2027</b><small>1 → 22 janvier · compagnon de voyage</small></div><button id="locate" title="État GPS">📍</button></header>
 <nav>
 <button data-tab="today" class="active">☀️<span>Aujourd’hui</span></button>
 <button data-tab="discover">🌴<span>Découvrir</span></button>
@@ -15,7 +15,7 @@
 <section id="today" class="tab active">
 <div class="hero"><div><small>BASE ACTIVE</small><h1 id="homeName">Sainte-Anne</h1><p id="dateHint">Votre programme reste toujours prioritaire.</p></div><button id="homeBtn">🏠 Retour logement</button></div>
 <div class="card"><div class="titleRow"><h2>Ma journée</h2><button class="ghost" id="optimize">Analyser</button></div><div id="dayList"></div><button class="primary wide" id="routeBtn">🧭 Démarrer le parcours choisi</button></div>
-<div id="advisor" class="card advisor"><h2>🧠 Journée intelligente</h2><p>Je conserve toujours vos choix. Si la journée prend du retard, je vous demande avant toute modification.</p><div class="actions"><button id="delay30">+30 min</button><button id="delay90">+1 h 30</button><button id="onTime">À l’heure</button></div><div id="advice"></div></div>
+<div id="gpsStatus" class="card"><h2>📍 GPS</h2><p id="gpsText">Position non vérifiée.</p><button class="primary" id="gpsTest">Tester ma position</button></div><div id="advisor" class="card advisor"><h2>🧠 Journée intelligente</h2><p>Je conserve toujours vos choix. Si la journée prend du retard, je vous demande avant toute modification.</p><div class="actions"><button id="delay30">+30 min</button><button id="delay90">+1 h 30</button><button id="onTime">À l’heure</button></div><div id="advice"></div></div>
 </section>
 
 <section id="discover" class="tab">

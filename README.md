@@ -17,3 +17,7 @@ PWA statique prête pour GitHub + Vercel.
 - Les logements sont des coordonnées approximatives jusqu'à saisie des adresses exactes.
 - Les événements, horaires, prix, parkings et données temporaires devront être vérifiés/actualisés avant le séjour.
 - Les notifications push en arrière-plan nécessitent un service push/backend ; cette V0.2 ne les simule pas.
+
+
+## V0.2.1
+Diagnostic GPS détaillé pour Safari/iPhone, état GPS visible, délai 20 s et précision non forcée au premier test.
