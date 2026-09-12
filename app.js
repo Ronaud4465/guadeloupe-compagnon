@@ -180,16 +180,49 @@ function osmDistance(tags){
  return d?`Distance indiquée : ${escHtml(d)}`:"Distance du parcours non renseignée";
 }
 
-async function fetchOverpass(query){
+// overpass-api.de et lz4.overpass-api.de (même projet officiel, 2 nœuds distincts) bloquent
+// les IP de fournisseurs cloud (AWS/Azure) pour lutter contre les abus — ce qui inclut les IP
+// sortantes de Vercel : un appel fait depuis notre propre serveur échoue systématiquement sur
+// ces deux miroirs, alors qu'un appel direct depuis le navigateur de l'utilisateur (IP
+// résidentielle/mobile, jamais visée par ce blocage) fonctionne. CORS vérifié ouvert
+// (Access-Control-Allow-Origin: *) sur les deux avant d'adopter cette approche.
+// overpass.kumi.systems est volontairement absent de cette liste : il ne répondait plus du
+// tout au moment du diagnostic, inutile de perdre 18s dessus depuis chaque navigateur — il
+// reste testé uniquement dans le filet de sécurité serveur ci-dessous.
+const DIRECT_OVERPASS_ENDPOINTS=[
+ "https://overpass-api.de/api/interpreter",
+ "https://lz4.overpass-api.de/api/interpreter"
+];
+
+async function fetchOverpassDirect(query,endpoint){
  const controller=new AbortController();
- // Doit rester ≥ au pire cas côté serveur (api/hikes.js essaie jusqu'à 3 miroirs Overpass en
- // cascade) pour ne jamais abandonner côté client alors qu'un miroir est encore en train de
- // répondre — sinon on retombe sur "Service de recherche indisponible" alors que ça aurait
- // fini par marcher. discoverNearbyHikes fait 2 appels séquentiels (tags+bb, puis géométrie) :
- // ce délai s'applique à chacun indépendamment, pas à leur somme.
+ const timer=setTimeout(()=>controller.abort(),18000);
+ try{
+  const r=await fetch(endpoint,{
+   method:"POST",
+   headers:{"Content-Type":"application/x-www-form-urlencoded;charset=UTF-8","Accept":"application/json"},
+   body:"data="+encodeURIComponent(query),
+   signal:controller.signal
+  });
+  clearTimeout(timer);
+  if(!r.ok)throw new Error("HTTP "+r.status);
+  const data=await r.json();
+  if(!data || !Array.isArray(data.elements))throw new Error("Réponse invalide");
+  return data;
+ }catch(err){
+  clearTimeout(timer);
+  throw err;
+ }
+}
+
+async function fetchOverpassViaProxy(query){
+ // Filet de sécurité : ne retente QUE kumi.systems côté serveur (?mirrors=kumi). Retenter
+ // overpass-api.de/lz4.overpass-api.de depuis Vercel donnerait le même échec que l'appel
+ // direct qui vient de se produire (même blocage d'IP), juste plus lentement — inutile.
+ const controller=new AbortController();
  const timer=setTimeout(()=>controller.abort(),60000);
  try{
-  const r=await fetch("/api/hikes?data="+encodeURIComponent(query),{
+  const r=await fetch("/api/hikes?mirrors=kumi&data="+encodeURIComponent(query),{
    method:"GET",
    headers:{"Accept":"application/json"},
    signal:controller.signal,
@@ -203,11 +236,24 @@ async function fetchOverpass(query){
   }
   const data=await r.json();
   if(!data || !Array.isArray(data.elements))throw new Error("Réponse invalide");
-  return {data,endpoint:"/api/hikes"};
+  return data;
  }catch(err){
   clearTimeout(timer);
   throw err;
  }
+}
+
+async function fetchOverpass(query){
+ for(const endpoint of DIRECT_OVERPASS_ENDPOINTS){
+  try{
+   const data=await fetchOverpassDirect(query,endpoint);
+   return {data,endpoint};
+  }catch(_){
+   // on essaie le miroir direct suivant, puis le filet de sécurité serveur si tous échouent
+  }
+ }
+ const data=await fetchOverpassViaProxy(query);
+ return {data,endpoint:"/api/hikes"};
 }
 
 
@@ -999,7 +1045,7 @@ window.addEventListener("load",()=>{
 });
 
 /* ===== V0.3.4 : IGN + journée intelligente + historique ===== */
-const APP_VERSION = "0.5.9";
+const APP_VERSION = "0.5.10";
 let swRegistration = null;
 let refreshingForUpdate = false;
 

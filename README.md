@@ -1,4 +1,43 @@
-# Guadeloupe Compagnon v0.5.9
+# Guadeloupe Compagnon v0.5.10
+
+## v0.5.10 — appel Overpass direct depuis le navigateur : overpass-api.de bloque les IP cloud (donc Vercel)
+
+Après la v0.5.9, la recherche de promenades a recommencé à échouer en production
+(« Service de recherche indisponible » après une longue attente) alors que les miroirs
+fonctionnaient parfaitement en les testant directement depuis un poste de travail au même
+moment. La cause : **`overpass-api.de` bloque délibérément les IP de fournisseurs cloud
+(AWS/Azure) pour lutter contre les abus** (politique documentée par la communauté
+OpenStreetMap). Vercel exécute ses fonctions serverless sur de l'infrastructure cloud, donc les
+requêtes envoyées depuis `api/hikes.js` tombent probablement dans ce blocage — ce qui touche
+d'un coup **2 des 3 miroirs de la liste**, puisque `overpass-api.de` et `lz4.overpass-api.de`
+sont deux nœuds du même projet officiel.
+
+**Changement d'architecture** : `app.js` appelle désormais `overpass-api.de` et
+`lz4.overpass-api.de` **directement depuis le navigateur** (CORS vérifié ouvert sur les deux :
+`Access-Control-Allow-Origin: *`, testé avec de vraies requêtes POST), plutôt que via le proxy
+serverless. L'IP vue par ces serveurs est alors celle de l'utilisateur (résidentielle/mobile),
+hors de portée de ce blocage. `overpass.kumi.systems` est exclu de cette cascade directe : il ne
+répondait plus du tout au moment du diagnostic, inutile de perdre 18 s dessus depuis chaque
+navigateur.
+
+`api/hikes.js` (le proxy serverless) reste en place comme **filet de sécurité uniquement**,
+appelé avec `?mirrors=kumi` si les deux appels directs échouent — il ne retente plus
+`overpass-api.de`/`lz4.overpass-api.de` depuis le serveur : si l'appel direct vient d'échouer
+dessus à cause du blocage d'IP, le refaire depuis ce même serveur cloud donnerait exactement le
+même résultat, juste plus lentement. Seul `kumi.systems` a une chance différente dans ce filet,
+puisque son éventuel échec n'est pas lié à une IP bloquée. Le endpoint reste adressable avec la
+cascade complète via `?mirrors=overpass,lz4,kumi` pour un usage autonome (tests, débogage).
+
+Testé : CORS confirmé ouvert sur les deux miroirs directs (en-tête `Access-Control-Allow-Origin:
+*` reçu sur une vraie requête POST). Le nouveau comportement de `api/hikes.js` a été vérifié en
+important directement le module (sans passer par Vercel) : `?mirrors=kumi` seul prend bien 18 s
+(un seul miroir tenté, pas 3×18 s) avant d'échouer proprement tant que kumi reste indisponible,
+et la cascade complète explicite (`?mirrors=overpass,lz4,kumi`) fonctionne toujours pour un appel
+autonome. Note pour la suite : l'adresse IP utilisée pour tester `overpass-api.de` pendant tout
+le diagnostic de cette session a été très sollicitée (dizaines de requêtes), ce qui a pu
+provoquer des réponses `406`/`504` ponctuelles côté test sans rapport avec le comportement réel
+attendu pour un utilisateur final dont l'IP n'a pas cet historique — à confirmer sur un vrai
+téléphone en conditions réelles.
 
 ## v0.5.9 — liste de miroirs Overpass obsolète : un mort en DNS, un autre en tête qui ne répondait plus
 

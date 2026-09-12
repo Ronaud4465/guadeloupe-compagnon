@@ -1,13 +1,23 @@
-// Ordre choisi d'après un test en conditions réelles (voir README v0.5.9) : overpass-api.de est
-// le plus fiable aujourd'hui, lz4.overpass-api.de (nœud "lambert" du même projet officiel) est
-// rapide et a été validé sur une vraie requête, kumi.systems est gardé en dernier car il ne
-// répondait plus du tout au moment du test (18s perdus à chaque requête s'il est en tête).
-// overpass.nchc.org.tw a été retiré : son nom DNS n'existe plus.
-const ENDPOINTS = [
-  "https://overpass-api.de/api/interpreter",
-  "https://lz4.overpass-api.de/api/interpreter",
-  "https://overpass.kumi.systems/api/interpreter"
-];
+// Depuis la v0.5.10, ce endpoint n'est plus le chemin principal de la recherche de promenades :
+// app.js appelle désormais overpass-api.de et lz4.overpass-api.de DIRECTEMENT depuis le
+// navigateur (CORS ouvert vérifié sur les deux : Access-Control-Allow-Origin: *), pour que l'IP
+// vue par ces serveurs soit celle de l'utilisateur plutôt que celle de Vercel. Raison : ce sont
+// deux nœuds du même projet officiel overpass-api.de, qui bloque les IP de fournisseurs cloud
+// (AWS/Azure) contre les abus — ce qui inclut apparemment les IP sortantes de Vercel, et faisait
+// systématiquement échouer ces deux miroirs quand ils étaient appelés depuis ce serveur.
+//
+// Ce endpoint ne sert donc plus que de filet de sécurité, appelé par app.js avec
+// ?mirrors=kumi : seul overpass.kumi.systems a une chance différente ici, puisque son échec
+// éventuel n'est pas lié à un blocage d'IP. Retenter overpass-api.de/lz4 depuis ce même serveur
+// donnerait le même résultat que l'appel direct qui vient d'échouer, en plus lent — ils sont
+// donc exclus par défaut de ce filet (voir DEFAULT_MIRROR_ORDER), mais restent adressables via
+// ?mirrors=overpass,lz4,kumi pour un appel autonome (tests, débogage).
+const ENDPOINTS = {
+  overpass: "https://overpass-api.de/api/interpreter",
+  lz4: "https://lz4.overpass-api.de/api/interpreter",
+  kumi: "https://overpass.kumi.systems/api/interpreter"
+};
+const DEFAULT_MIRROR_ORDER = ["kumi"];
 
 module.exports = async (req, res) => {
   res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=300");
@@ -16,12 +26,17 @@ module.exports = async (req, res) => {
     return res.status(400).json({ error: "Requête de promenade invalide." });
   }
 
+  const requested = typeof req.query.mirrors === "string"
+    ? req.query.mirrors.split(",").map(s => s.trim()).filter(k => ENDPOINTS[k])
+    : [];
+  const mirrorOrder = requested.length ? requested : DEFAULT_MIRROR_ORDER;
+
   let lastError = "Aucun serveur de données n'a répondu.";
-  for (const endpoint of ENDPOINTS) {
+  for (const key of mirrorOrder) {
+    const endpoint = ENDPOINTS[key];
     const controller = new AbortController();
-    // 3 miroirs x 18s = 54s dans le pire cas. Le timeout client (fetchOverpass dans app.js,
-    // 60s) doit rester au-dessus de cette valeur, sinon le navigateur abandonne avant que ce
-    // serveur ait fini d'essayer tous les miroirs.
+    // 18s par miroir. Le timeout client (fetchOverpassViaProxy dans app.js, 60s) doit rester
+    // au-dessus du pire cas ici, sinon le navigateur abandonne avant que ce serveur ait fini.
     const timer = setTimeout(() => controller.abort(), 18000);
     try {
       const r = await fetch(endpoint, {
@@ -29,7 +44,7 @@ module.exports = async (req, res) => {
         headers: {
           "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
           "Accept": "application/json",
-          "User-Agent": "Guadeloupe-Compagnon/0.5.9"
+          "User-Agent": "Guadeloupe-Compagnon/0.5.10"
         },
         body: "data=" + encodeURIComponent(query),
         signal: controller.signal
