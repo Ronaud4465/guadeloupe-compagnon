@@ -1,4 +1,4 @@
-const CACHE = "gw032-pin-update-v1";
+const CACHE = "gw033-scanner-update-v1";
 const STATIC_FILES = [
   "/style.css",
   "/app.js",

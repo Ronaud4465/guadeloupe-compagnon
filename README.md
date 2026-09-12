@@ -32,7 +32,7 @@ Diagnostic GPS détaillé pour Safari/iPhone, état GPS visible, délai 20 s et 
 - Attention : effacer les données Safari ou perdre l'appareil peut supprimer le coffre. Garder les originaux.
 
 
-## V0.3.2 — Mise à jour automatique
+## V0.3.3 — Mise à jour automatique
 - corrige le cache PWA persistant sur iPhone/Safari
 - supprime automatiquement les anciens caches lors de l’activation
 - force l’activation immédiate du nouveau service worker
@@ -42,5 +42,9 @@ Diagnostic GPS détaillé pour Safari/iPhone, état GPS visible, délai 20 s et 
 - le coffre local chiffré IndexedDB n’est ni supprimé ni modifié par les mises à jour
 
 
-## V0.3.2
+## V0.3.3
 Ajout du changement de code PIN avec rechiffrement local des documents existants.
+
+
+## V0.3.3
+Scanner recto/verso : deux captures regroupées dans un seul document JPEG chiffré.

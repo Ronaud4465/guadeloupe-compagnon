@@ -3,7 +3,7 @@
 <meta name="theme-color" content="#0a675e"><title>Guadeloupe Compagnon</title>
 <link rel="manifest" href="/manifest.webmanifest"><link rel="stylesheet" href="/style.css">
 </head><body>
-<header><div><b>🌴 Guadeloupe 2027</b><small>1 → 22 janvier · compagnon de voyage · <span id="appVersion">v0.3.2</span></small></div><button id="locate" title="État GPS">📍</button></header>
+<header><div><b>🌴 Guadeloupe 2027</b><small>1 → 22 janvier · compagnon de voyage · <span id="appVersion">v0.3.3</span></small></div><button id="locate" title="État GPS">📍</button></header>
 <nav>
 <button data-tab="today" class="active">☀️<span>Aujourd’hui</span></button>
 <button data-tab="discover">🌴<span>Découvrir</span></button>
@@ -75,13 +75,25 @@
       <option>🧾 Assurance / assistance</option>
       <option>📄 Autre</option>
     </select>
-    <label class="scanBtn">📷 Scanner / photographier
+    <button class="scanBtn" id="startCardScan" type="button">🪪 Scanner une carte recto / verso</button>
+    <div id="cardScanBox" class="hidden" style="margin-top:12px">
+      <p><b>Étape 1/2 — Recto</b></p>
+      <label class="scanBtn">📷 Photographier le recto<input id="cardFrontInput" type="file" accept="image/*" capture="environment" hidden></label>
+      <div id="frontStatus" class="meta">Recto non photographié.</div>
+      <p><b>Étape 2/2 — Verso</b></p>
+      <label class="scanBtn">📷 Photographier le verso<input id="cardBackInput" type="file" accept="image/*" capture="environment" hidden></label>
+      <div id="backStatus" class="meta">Verso non photographié.</div>
+      <button class="primary wide" id="saveCardScan" type="button" disabled>🔐 Enregistrer recto + verso</button>
+      <button class="ghost wide" id="cancelCardScan" type="button">Annuler</button>
+      <p class="meta">Les deux faces sont regroupées en un seul document chiffré. Rien n’est envoyé sur Internet.</p>
+    </div>
+    <label class="scanBtn">📷 Photographier un document simple
       <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden>
     </label>
     <label class="scanBtn secondaryScan">📁 Choisir photo ou PDF
       <input id="fileInput" type="file" accept="image/*,application/pdf" hidden>
     </label>
-    <p class="meta">Sur iPhone, « Scanner / photographier » ouvre directement l’appareil photo.</p>
+    <p class="meta">Sur iPhone, les boutons photo ouvrent directement l’appareil photo. Pour une carte, utilisez le scanner recto / verso.</p>
   </div>
 
   <div class="card">
@@ -100,7 +112,7 @@
 <section id="settings" class="tab">
 <div class="sectionHead"><h1>Notre voyage</h1><p>Les logements sont modifiables dès que vous avez les adresses exactes.</p></div>
 <div id="homes"></div>
-<div class="card updateCard"><div class="titleRow"><h2>🔄 Mise à jour</h2><span class="versionBadge">v0.3.2</span></div><p id="updateText">L’application vérifie automatiquement les nouvelles versions.</p><button id="checkUpdate" class="ghost wide">Vérifier maintenant</button></div>
+<div class="card updateCard"><div class="titleRow"><h2>🔄 Mise à jour</h2><span class="versionBadge">v0.3.3</span></div><p id="updateText">L’application vérifie automatiquement les nouvelles versions.</p><button id="checkUpdate" class="ghost wide">Vérifier maintenant</button></div>
 <div class="card"><h2>🔔 Notifications</h2><p>Autorisez-les pour les alertes utiles pendant que l’application est utilisée. Les notifications push en arrière-plan seront la prochaine étape.</p><button id="notify" class="primary">Autoriser les notifications</button></div>
 <div class="card"><h2>Règles de l’assistant</h2><p>✓ Le programme choisi reste prioritaire.<br>✓ Aucune visite n’est remplacée sans votre accord.<br>✓ En cas de retard : continuer, reporter ou voir une alternative.<br>✓ Une visite reportée n’est jamais supprimée.<br>✓ Les 💎 sont rares et réservées aux vraies pépites.</p></div>
 </section>

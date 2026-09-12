@@ -124,6 +124,14 @@ async function changeVaultPin(){
  }
 }
 
+
+// ===== V0.3.3 : scanner carte recto / verso =====
+let cardFrontFile=null, cardBackFile=null;
+function resetCardScan(){cardFrontFile=cardBackFile=null;const a=document.getElementById("cardFrontInput"),b=document.getElementById("cardBackInput");if(a)a.value="";if(b)b.value="";document.getElementById("frontStatus").textContent="Recto non photographié.";document.getElementById("backStatus").textContent="Verso non photographié.";document.getElementById("saveCardScan").disabled=true}
+function imageFromFile(file){return new Promise((resolve,reject)=>{const u=URL.createObjectURL(file),im=new Image();im.onload=()=>{URL.revokeObjectURL(u);resolve(im)};im.onerror=e=>{URL.revokeObjectURL(u);reject(e)};im.src=u})}
+async function makeTwoSidedCard(front,back){const a=await imageFromFile(front),b=await imageFromFile(back),W=1600,gap=40,margin=50;const h=im=>Math.round(W*im.height/im.width),ah=h(a),bh=h(b),c=document.createElement("canvas");c.width=W+margin*2;c.height=ah+bh+gap+margin*2;const x=c.getContext("2d");x.fillStyle="#fff";x.fillRect(0,0,c.width,c.height);x.drawImage(a,margin,margin,W,ah);x.drawImage(b,margin,margin+ah+gap,W,bh);const blob=await new Promise(r=>c.toBlob(r,"image/jpeg",0.9));if(!blob)throw new Error("Création impossible");return new File([blob],"carte-recto-verso-"+new Date().toISOString().slice(0,10)+".jpg",{type:"image/jpeg"})}
+async function saveCardScan(){if(!cardFrontFile||!cardBackFile)return openModal("Scanner","Photographiez d’abord le recto et le verso.");try{const f=await makeTwoSidedCard(cardFrontFile,cardBackFile);await addVaultFile(f);resetCardScan();document.getElementById("cardScanBox").classList.add("hidden")}catch(e){openModal("Scanner","Impossible de créer le document : "+(e.message||e))}}
+
 window.addEventListener("load",()=>{
  if(S.pos && Date.now()-S.pos.at<3600000) setGps(`Dernière position connue — précision ±${S.pos.accuracy||"?"} m`,true);
 });
@@ -321,12 +329,17 @@ window.addEventListener("load",()=>{
  const cp=document.getElementById("changeVaultPin"); if(cp)cp.onclick=changeVaultPin;
  const cc=document.getElementById("cancelChangePin"); if(cc)cc.onclick=()=>document.getElementById("changePinBox").classList.add("hidden");
  const r=document.getElementById("refreshDocs"); if(r)r.onclick=renderVaultDocs;
+ const ss=document.getElementById("startCardScan"); if(ss)ss.onclick=()=>{resetCardScan();document.getElementById("cardScanBox").classList.remove("hidden")};
+ const sf=document.getElementById("cardFrontInput"); if(sf)sf.onchange=e=>{cardFrontFile=e.target.files[0]||null;document.getElementById("frontStatus").textContent=cardFrontFile?"✅ Recto prêt.":"Recto non photographié.";document.getElementById("saveCardScan").disabled=!(cardFrontFile&&cardBackFile)};
+ const sb=document.getElementById("cardBackInput"); if(sb)sb.onchange=e=>{cardBackFile=e.target.files[0]||null;document.getElementById("backStatus").textContent=cardBackFile?"✅ Verso prêt.":"Verso non photographié.";document.getElementById("saveCardScan").disabled=!(cardFrontFile&&cardBackFile)};
+ const sv=document.getElementById("saveCardScan"); if(sv)sv.onclick=saveCardScan;
+ const sc=document.getElementById("cancelCardScan"); if(sc)sc.onclick=()=>{resetCardScan();document.getElementById("cardScanBox").classList.add("hidden")};
  const c=document.getElementById("cameraInput"); if(c)c.onchange=e=>{addVaultFile(e.target.files[0]);e.target.value=""};
  const f=document.getElementById("fileInput"); if(f)f.onchange=e=>{addVaultFile(e.target.files[0]);e.target.value=""};
 });
 
-/* ===== V0.3.2 : mises à jour PWA fiables ===== */
-const APP_VERSION = "0.3.2";
+/* ===== V0.3.3 : mises à jour PWA fiables ===== */
+const APP_VERSION = "0.3.3";
 let swRegistration = null;
 let refreshingForUpdate = false;
 
