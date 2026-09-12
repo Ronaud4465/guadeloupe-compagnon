@@ -206,12 +206,6 @@ async function fetchOverpass(query){
 }
 
 
-// Rôles OSM acceptés pour un itinéraire de rando/promenade (voir wiki OSM "Roles for
-// recreational route relations"). On ignore les autres rôles (ex. "boundary", "label",
-// "poi"...) qui ne représentent pas un chemin à suivre à pied, pour ne pas fausser la
-// distance ni le tracé.
-const WALKABLE_ROLES=new Set(["","main","alternative","approach","excursion","connection"]);
-function isWalkableMember(m){return !m.role || WALKABLE_ROLES.has(m.role);}
 function routeGeometryPoints(el){
  const pts=[];
  if(Array.isArray(el.geometry)){
@@ -221,7 +215,6 @@ function routeGeometryPoints(el){
  }
  if(Array.isArray(el.members)){
    for(const m of el.members){
-     if(!isWalkableMember(m))continue;
      if(Array.isArray(m.geometry)){
        for(const p of m.geometry){
          if(Number.isFinite(p.lat)&&Number.isFinite(p.lon))pts.push({lat:p.lat,lng:p.lon});
@@ -247,15 +240,14 @@ function pointToSegmentMeters(p,a,b){
  return Math.sqrt(x*x+y*y);
 }
 function routeGeometryGroups(el){
- // Retourne les segments (suites de points {lat,lng}) réellement marchables d'une relation,
- // en ignorant les membres dont le rôle n'est pas un rôle de chemin (voir isWalkableMember).
+ // Retourne les segments (suites de points {lat,lng}) d'une relation, pour calculer sa
+ // longueur totale (repère "itinéraire étendu") et son tracé.
  const groups=[];
  if(Array.isArray(el.geometry)&&el.geometry.length>1){
    groups.push(el.geometry.filter(p=>Number.isFinite(p.lat)&&Number.isFinite(p.lon)).map(p=>({lat:p.lat,lng:p.lon})));
  }
  if(Array.isArray(el.members)){
    for(const m of el.members){
-     if(!isWalkableMember(m))continue;
      if(Array.isArray(m.geometry)&&m.geometry.length>1){
        groups.push(m.geometry.filter(p=>Number.isFinite(p.lat)&&Number.isFinite(p.lon)).map(p=>({lat:p.lat,lng:p.lon})));
      }
@@ -269,7 +261,6 @@ function nearestRouteMeters(pos,el){
  if(Array.isArray(el.geometry)&&el.geometry.length>1)groups.push(el.geometry);
  if(Array.isArray(el.members)){
    for(const m of el.members){
-     if(!isWalkableMember(m))continue;
      if(Array.isArray(m.geometry)&&m.geometry.length>1)groups.push(m.geometry);
    }
  }
@@ -316,7 +307,7 @@ async function discoverNearbyHikes(pos){
  // multiples, versions différentes), ce qui pouvait faire échouer toute la recherche.
  const q=`[out:json][timeout:22];(
    relation(around:${radius},${pos.lat},${pos.lng})["route"~"^(hiking|foot|walking)$"];
- );out geom tags;`;
+ );out geom;`;
 
  try{
   const result=await fetchOverpass(q);
@@ -926,7 +917,7 @@ window.addEventListener("load",()=>{
 });
 
 /* ===== V0.3.4 : IGN + journée intelligente + historique ===== */
-const APP_VERSION = "0.5.6";
+const APP_VERSION = "0.5.7";
 let swRegistration = null;
 let refreshingForUpdate = false;
 
