@@ -14,6 +14,9 @@ module.exports = async (req, res) => {
   let lastError = "Aucun serveur de données n'a répondu.";
   for (const endpoint of ENDPOINTS) {
     const controller = new AbortController();
+    // 3 miroirs x 18s = 54s dans le pire cas. Le timeout client (fetchOverpass dans app.js,
+    // 60s) doit rester au-dessus de cette valeur, sinon le navigateur abandonne avant que ce
+    // serveur ait fini d'essayer tous les miroirs.
     const timer = setTimeout(() => controller.abort(), 18000);
     try {
       const r = await fetch(endpoint, {
@@ -21,7 +24,7 @@ module.exports = async (req, res) => {
         headers: {
           "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
           "Accept": "application/json",
-          "User-Agent": "Guadeloupe-Compagnon/0.5.6"
+          "User-Agent": "Guadeloupe-Compagnon/0.5.8"
         },
         body: "data=" + encodeURIComponent(query),
         signal: controller.signal
