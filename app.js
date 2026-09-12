@@ -184,7 +184,7 @@ async function discoverNearbyHikes(pos){
    const key=(name+"|"+lat.toFixed(3)+"|"+lng.toFixed(3)).toLowerCase();
    if(seen.has(key))return null;
    seen.add(key);
-   return {name,lat,lng,t,nearKm:km(pos,{lat,lng})};
+   return {id:x.id,name,lat,lng,t,nearKm:km(pos,{lat,lng})};
   }).filter(Boolean)
     .filter(x=>x.nearKm<=nearHikeRadius*1.15)
     .sort((a,b)=>a.nearKm-b.nearKm)
@@ -203,8 +203,9 @@ async function discoverNearbyHikes(pos){
     ${x.t.description?`<p>${escHtml(x.t.description)}</p>`:""}
     <div class="sourceTag">Source : OpenStreetMap · données contributives</div>
     <div class="placeBtns">
-      <button class="ignBtn" onclick='openIgnCoords(${JSON.stringify(x.name)},${x.lat},${x.lng})'>🗺️ Voir sur IGN</button>
-      <button class="primary" onclick="navigateTo('${x.lat},${x.lng}')">🚗 Aller à proximité</button>
+      <button class="ignBtn" onclick='openOsmHikeRoute(${x.id},${JSON.stringify(x.name)},${x.lat},${x.lng},${JSON.stringify(x.t.duration||"")},${JSON.stringify(x.t.distance||"")})'>🥾 PARCOURS + TEMPS</button>
+      <button class="ghost" onclick='openIgnCoords(${JSON.stringify(x.name)},${x.lat},${x.lng})'>🗺️ Point sur IGN</button>
+      <button class="primary" onclick="navigateTo('${x.lat},${x.lng}')">🚗 Aller au départ</button>
     </div>
   </div>`).join("");
  }catch(e){
@@ -230,6 +231,114 @@ function renderHikes(){
  const el=document.getElementById('hikeList'); if(!el)return;
  el.innerHTML=Object.keys(HIKES).map(id=>all().find(p=>p.id===id)).filter(Boolean).map(p=>`<div class="card ${isDone(p.id)?'completedPlace':''}"><div class="titleRow"><h2>${isDone(p.id)?'✓ ':''}🥾 ${p.name}</h2>${isDone(p.id)?'<span class="doneBadge">FAIT</span>':''}</div>${hikeInline(p)}${!isDone(p.id)?`<button class="doneBtn wide" onclick="markDone('${p.id}')">✓ Marquer comme fait</button>`:`<button class="ghost wide" onclick="restorePlace('${p.id}')">↩ Remettre à visiter</button>`}</div>`).join('');
 }
+
+
+function addRobustBaseLayers(map){
+  const osm=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    maxZoom:19,
+    attribution:'© OpenStreetMap'
+  }).addTo(map);
+
+  let ignErrors=0;
+  const ign=L.tileLayer('https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&TILEMATRIXSET=PM&TILEROW={y}&TILECOL={x}&TILEMATRIX={z}&FORMAT=image/png',{
+    maxZoom:18,
+    attribution:'© IGN / Géoplateforme'
+  }).addTo(map);
+
+  ign.on('tileerror',()=>{
+    ignErrors++;
+    if(ignErrors>=3 && map.hasLayer(ign)){
+      map.removeLayer(ign);
+      const fb=document.getElementById('ignMapFallback');
+      if(fb){
+        fb.classList.remove('hidden');
+        fb.innerHTML='<b>Fond IGN momentanément indisponible.</b> Le parcours reste affiché sur un fond OpenStreetMap.';
+      }
+    }
+  });
+  return {osm,ign};
+}
+function stabilizeLeafletMap(map){
+  [50,200,500,1000].forEach(ms=>setTimeout(()=>{try{map.invalidateSize(true)}catch(_){}},ms));
+}
+
+function haversineMeters(a,b){
+ const R=6371000,toRad=x=>x*Math.PI/180;
+ const dLat=toRad(b.lat-a.lat),dLon=toRad(b.lng-a.lng);
+ const la1=toRad(a.lat),la2=toRad(b.lat);
+ const h=Math.sin(dLat/2)**2+Math.cos(la1)*Math.cos(la2)*Math.sin(dLon/2)**2;
+ return 2*R*Math.asin(Math.sqrt(h));
+}
+function formatRouteDistance(m){
+ if(!Number.isFinite(m))return "non renseignée";
+ return m<1000?`${Math.round(m)} m`:`${(m/1000).toFixed(m<10000?1:0)} km`;
+}
+function collectRelationLines(data){
+ const lines=[];
+ for(const el of (data.elements||[])){
+  if(el.type==="relation" && Array.isArray(el.members)){
+   for(const m of el.members){
+    if(Array.isArray(m.geometry) && m.geometry.length>1){
+     lines.push(m.geometry.map(p=>({lat:p.lat,lng:p.lon})));
+    }
+   }
+  }else if(Array.isArray(el.geometry) && el.geometry.length>1){
+   lines.push(el.geometry.map(p=>({lat:p.lat,lng:p.lon})));
+  }
+ }
+ return lines;
+}
+function sumLineMeters(lines){
+ let total=0;
+ for(const line of lines){
+  for(let i=1;i<line.length;i++) total+=haversineMeters(line[i-1],line[i]);
+ }
+ return total;
+}
+window.openOsmHikeRoute=async function(relId,name,lat,lng,durationTag,distanceTag){
+ document.getElementById('ignMapTitle').textContent=`🥾 ${name}`;
+ document.getElementById('ignMapModal').classList.remove('hidden');
+ const fallback=document.getElementById('ignMapFallback');
+ fallback.classList.remove('hidden');
+ fallback.innerHTML='🔎 Chargement du tracé de la promenade…';
+
+ try{
+  const q=`[out:json][timeout:20];relation(${relId});out geom;`;
+  const result=await fetchOverpass(q);
+  const lines=collectRelationLines(result.data);
+  if(!lines.length)throw new Error("Tracé non disponible");
+
+  const computedMeters=sumLineMeters(lines);
+  const distanceText=distanceTag ? distanceTag : formatRouteDistance(computedMeters);
+  const distanceLabel=distanceTag ? "Distance source" : "Distance calculée sur le tracé OSM";
+  const timeText=durationTag ? durationTag : "non renseigné";
+
+  fallback.innerHTML=`<b>${escHtml(name)}</b><br>${distanceLabel} : <b>${escHtml(distanceText)}</b> · Temps : <b>${escHtml(timeText)}</b><br><span class="meta">${durationTag?"Temps fourni par OpenStreetMap.":"Aucun temps fiable n’est fourni par la source : l’app ne l’invente pas."}</span>`;
+
+  setTimeout(()=>{
+   if(!window.L)return;
+   if(ignMap){ignMap.remove();ignMap=null;}
+   ignMap=L.map('ignMap',{zoomControl:true});
+   addRobustBaseLayers(ignMap);
+
+   const latlngs=lines.map(line=>line.map(p=>[p.lat,p.lng]));
+   const routeLayer=L.featureGroup();
+   latlngs.forEach(line=>L.polyline(line,{weight:5,opacity:.9}).addTo(routeLayer));
+   routeLayer.addTo(ignMap);
+
+   const first=lines[0][0];
+   L.marker([first.lat,first.lng]).addTo(ignMap).bindPopup('Départ du parcours');
+   if(S.pos) L.circleMarker([S.pos.lat,S.pos.lng],{radius:8}).addTo(ignMap).bindPopup('Votre position GPS');
+
+   const bounds=routeLayer.getBounds();
+   if(bounds.isValid())ignMap.fitBounds(bounds.pad(.08));
+   else ignMap.setView([lat,lng],14);
+   stabilizeLeafletMap(ignMap);
+  },80);
+ }catch(e){
+  fallback.innerHTML='<b>⚠️ Tracé indisponible</b><br>La promenade est référencée, mais OpenStreetMap ne fournit pas actuellement une géométrie exploitable pour ce parcours.';
+ }
+};
 window.openIgnCoords=function(name,lat,lng){
  document.getElementById('ignMapTitle').textContent=`🗺️ IGN · ${name}`;
  document.getElementById('ignMapModal').classList.remove('hidden');
@@ -252,7 +361,7 @@ window.openIgnMap=function(id){
   L.tileLayer('https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/png',{maxZoom:18,attribution:'© IGN / Géoplateforme'}).addTo(ignMap);
   ignMarker=L.marker([p.lat,p.lng]).addTo(ignMap).bindPopup(p.name).openPopup();
   if(S.pos)gpsMarker=L.circleMarker([S.pos.lat,S.pos.lng],{radius:8}).addTo(ignMap).bindPopup('Votre position GPS');
-  setTimeout(()=>ignMap.invalidateSize(),200);
+  stabilizeLeafletMap(ignMap);
  },80);
 };
 function closeIgn(){document.getElementById('ignMapModal').classList.add('hidden');if(ignMap){ignMap.remove();ignMap=null}}
@@ -560,7 +669,7 @@ window.addEventListener("load",()=>{
 });
 
 /* ===== V0.3.4 : IGN + journée intelligente + historique ===== */
-const APP_VERSION = "0.4.9";
+const APP_VERSION = "0.5.1";
 let swRegistration = null;
 let refreshingForUpdate = false;
 

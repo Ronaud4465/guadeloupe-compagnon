@@ -41,3 +41,10 @@ input,select,textarea{width:100%;padding:13px;border:1px solid #cddbd7;border-ra
 @media(max-width:520px){.radiusRow{grid-template-columns:repeat(2,1fr)}}
 
 .sourceTag{font-size:.78rem;opacity:.72;margin-top:5px;font-style:italic}
+
+#ignMapFallback:not(.hidden){padding:10px 12px;border-radius:12px;margin:4px 0 8px 0;background:#f5f5f5;line-height:1.45}
+
+.nearbyHike .placeBtns .ignBtn{font-weight:800}
+.nearbyHike .placeBtns button:first-child{min-width:180px}
+#ignMap{background:#e8e8e8}
+.leaflet-tile-container img{will-change:transform}

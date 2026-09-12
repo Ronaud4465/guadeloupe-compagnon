@@ -1,8 +1,11 @@
-# Guadeloupe Compagnon v0.4.9
+# Guadeloupe Compagnon v0.5.1
 
-Corrections :
-- les boutons 2 / 5 / 10 / 20 km relancent désormais immédiatement une nouvelle recherche ;
-- le rayon choisi est affiché dans le statut ;
-- la géolocalisation demande maintenant la meilleure précision disponible ;
-- si le téléphone ne fournit qu'une position très approximative, l'app bloque la recherche et l'indique clairement au lieu d'afficher des promenades d'une autre région ;
-- le proxy Vercel de la v0.4.8 est conservé.
+Correctifs :
+- bouton très visible « PARCOURS + TEMPS » sur chaque promenade trouvée en ligne ;
+- cache-busting de app.js / data.js / style.css pour éviter qu'un téléphone conserve l'ancienne interface ;
+- stabilisation de la carte Leaflet après ouverture du panneau ;
+- fond OpenStreetMap chargé sous le fond IGN ;
+- si les tuiles IGN échouent, bascule automatique sur OpenStreetMap au lieu d'une carte grise ;
+- plusieurs recalculs de taille de carte pour éviter de devoir jouer avec le zoom.
+
+Le tracé, la distance et le temps restent issus des données disponibles ; aucun temps n'est inventé.
