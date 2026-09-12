@@ -131,31 +131,29 @@ function osmDistance(tags){
  return d?`Distance indiquée : ${escHtml(d)}`:"Distance du parcours non renseignée";
 }
 
-const OVERPASS_ENDPOINTS=[
- "https://overpass.kumi.systems/api/interpreter",
- "https://overpass-api.de/api/interpreter",
- "https://overpass.nchc.org.tw/api/interpreter"
-];
-
 async function fetchOverpass(query){
- let lastError=null;
- for(const endpoint of OVERPASS_ENDPOINTS){
-  const controller=new AbortController();
-  const timer=setTimeout(()=>controller.abort(),12000);
-  try{
-   const url=endpoint+"?data="+encodeURIComponent(query);
-   const r=await fetch(url,{method:"GET",headers:{"Accept":"application/json"},signal:controller.signal,cache:"no-store"});
-   clearTimeout(timer);
-   if(!r.ok)throw new Error("HTTP "+r.status);
-   const data=await r.json();
-   if(!data || !Array.isArray(data.elements))throw new Error("Réponse invalide");
-   return {data,endpoint};
-  }catch(err){
-   clearTimeout(timer);
-   lastError=err;
+ const controller=new AbortController();
+ const timer=setTimeout(()=>controller.abort(),30000);
+ try{
+  const r=await fetch("/api/hikes?data="+encodeURIComponent(query),{
+   method:"GET",
+   headers:{"Accept":"application/json"},
+   signal:controller.signal,
+   cache:"no-store"
+  });
+  clearTimeout(timer);
+  if(!r.ok){
+   let msg="HTTP "+r.status;
+   try{const e=await r.json(); if(e?.error)msg=e.error;}catch(_){}
+   throw new Error(msg);
   }
+  const data=await r.json();
+  if(!data || !Array.isArray(data.elements))throw new Error("Réponse invalide");
+  return {data,endpoint:"/api/hikes"};
+ }catch(err){
+  clearTimeout(timer);
+  throw err;
  }
- throw lastError||new Error("Aucun serveur disponible");
 }
 
 async function discoverNearbyHikes(pos){
@@ -551,7 +549,7 @@ window.addEventListener("load",()=>{
 });
 
 /* ===== V0.3.4 : IGN + journée intelligente + historique ===== */
-const APP_VERSION = "0.4.7";
+const APP_VERSION = "0.4.8";
 let swRegistration = null;
 let refreshingForUpdate = false;
 
@@ -616,7 +614,7 @@ window.addEventListener("load", ()=>{
  const b=document.getElementById("checkUpdate"); if(b) b.onclick=()=>checkForAppUpdate(true);
 });
 
-/* ===== V0.4.0 : moteur séjour + météo + progression + journée réaliste ===== */
+/* ===== Moteur séjour + météo + progression + journée réaliste ===== */
 S.revisit=S.revisit||[]; S.homeOverride=S.homeOverride||"auto"; S.weatherCache=S.weatherCache||{}; save();
 
 function tripDateISO(){ return new Date().toISOString().slice(0,10); }
