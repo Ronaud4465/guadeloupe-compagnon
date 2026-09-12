@@ -182,7 +182,12 @@ function osmDistance(tags){
 
 async function fetchOverpass(query){
  const controller=new AbortController();
- const timer=setTimeout(()=>controller.abort(),30000);
+ // Doit rester ≥ au pire cas côté serveur (api/hikes.js essaie jusqu'à 3 miroirs Overpass en
+ // cascade) pour ne jamais abandonner côté client alors qu'un miroir est encore en train de
+ // répondre — sinon on retombe sur "Service de recherche indisponible" alors que ça aurait
+ // fini par marcher. discoverNearbyHikes fait 2 appels séquentiels (tags+bb, puis géométrie) :
+ // ce délai s'applique à chacun indépendamment, pas à leur somme.
+ const timer=setTimeout(()=>controller.abort(),60000);
  try{
   const r=await fetch("/api/hikes?data="+encodeURIComponent(query),{
    method:"GET",
@@ -288,6 +293,66 @@ function representativeRoutePoint(pos,el){
  return null;
 }
 
+// Seuils de la recherche "promenades autour de moi" (voir discoverNearbyHikes) : bornent le
+// coût de la requête Overpass indépendamment de la densité de la zone interrogée.
+const HIKE_BBOX_DIAGONAL_MAX_KM=18; // au-delà, la bounding box de la relation est trop étendue pour être une promenade ponctuelle (GR, itinéraire de pèlerinage...)
+const HIKE_CANDIDATE_LIMIT=70; // plafond fixe (pas un pourcentage des survivantes) : borne le pire cas de la requête géométrie détaillée même dans une zone très dense en promenades référencées
+const HIKE_MAX_GEOMETRY_POINTS=4000; // par itinéraire, garde-fou si une relation passe quand même le filtre de bounding box
+
+function boundsDiagonalMeters(b){
+ return haversineMeters({lat:b.minlat,lng:b.minlon},{lat:b.maxlat,lng:b.maxlon});
+}
+function pointToBoundsMeters(pos,b){
+ // Distance du point au rectangle (0 si le point est dedans) : c'est une minoration fiable de
+ // la vraie distance au tracé, donc ce tri ne peut jamais écarter à tort un itinéraire proche.
+ const lat=Math.max(b.minlat,Math.min(b.maxlat,pos.lat));
+ const lng=Math.max(b.minlon,Math.min(b.maxlon,pos.lng));
+ return haversineMeters(pos,{lat,lng});
+}
+function selectNearbyRouteCandidates(elements,pos){
+ const candidates=[];
+ for(const x of elements){
+   const t=x.tags||{};
+   if(t.type==="network"||t.type==="superroute")continue; // réseau entier, pas une promenade
+   const b=x.bounds;
+   if(!b)continue;
+   if(boundsDiagonalMeters(b)/1000>HIKE_BBOX_DIAGONAL_MAX_KM)continue;
+   candidates.push({id:x.id,approxKm:pointToBoundsMeters(pos,b)/1000});
+ }
+ candidates.sort((a,b)=>a.approxKm-b.approxKm);
+ return candidates.slice(0,HIKE_CANDIDATE_LIMIT).map(c=>c.id);
+}
+function capRouteMembers(members,maxPoints,pos){
+ // Les membres sont triés par proximité avant d'appliquer le plafond : sinon, sur un itinéraire
+ // qui dépasse le plafond, on tronquerait dans l'ordre OSM des "ways" (sans rapport avec la
+ // position de l'utilisateur) et le segment réellement le plus proche pourrait finir dans la
+ // portion coupée, faussant la distance affichée.
+ const list=(members||[]).map(m=>{
+   const geom=Array.isArray(m.geometry)?m.geometry:[];
+   let minM=Infinity;
+   for(const p of geom){
+     if(!Number.isFinite(p.lat)||!Number.isFinite(p.lon))continue;
+     const d=haversineMeters(pos,{lat:p.lat,lng:p.lon});
+     if(d<minM)minM=d;
+   }
+   return {m,geom,minM};
+ });
+ list.sort((a,b)=>a.minM-b.minM);
+ const capped=[];
+ let remaining=maxPoints,truncated=false;
+ for(const {m,geom} of list){
+   if(geom.length<=remaining){
+     capped.push(m);
+     remaining-=geom.length;
+   }else{
+     if(remaining>0)capped.push({...m,geometry:geom.slice(0,remaining)});
+     truncated=true;
+     remaining=0;
+   }
+ }
+ return {members:capped,truncated};
+}
+
 async function discoverNearbyHikes(pos){
  const el=document.getElementById("nearHikeList"),status=document.getElementById("nearHikeStatus");
  if(pos.accuracy && pos.accuracy>5000){
@@ -300,37 +365,54 @@ async function discoverNearbyHikes(pos){
  el.innerHTML='<div class="card"><p>🔎 Recherche d’itinéraires pédestres publics autour de votre position…</p><p class="meta">Plusieurs serveurs sont essayés automatiquement. Les durées et difficultés ne sont jamais inventées.</p></div>';
 
  const radius=Math.round(nearHikeRadius*1000);
- // Note : l'exclusion des super-relations "réseau" (type=network / superroute) se fait
- // plus bas, côté app, sur les tags reçus — PAS dans la requête Overpass elle-même.
- // Combiner un filtre regex négatif avec un autre filtre regex dans la même requête est
- // documenté comme instable selon les versions des serveurs Overpass (miroirs publics
- // multiples, versions différentes), ce qui pouvait faire échouer toute la recherche.
- const q=`[out:json][timeout:22];(
-   relation(around:${radius},${pos.lat},${pos.lng})["route"~"^(hiking|foot|walking)$"];
- );out geom;`;
+ // Requête en 3 temps pour ne jamais télécharger la géométrie complète d'un grand itinéraire
+ // (un GR de 300 km ne doit plus jamais faire exploser la taille de la réponse) :
+ //  1. on liste les relations proches avec seulement leurs tags + bounding box (réponse légère
+ //     même avec des centaines de relations autour du point) ;
+ //  2. côté app (selectNearbyRouteCandidates), on exclut les super-relations "réseau"
+ //     (type=network/superroute) et celles dont la bounding box est trop étendue pour être une
+ //     promenade ponctuelle (GR, pèlerinage...), puis on ne garde que les plus proches ;
+ //  3. on télécharge la géométrie complète uniquement pour ces survivantes, en un seul appel
+ //     groupé par id.
+ const tagsQuery=`[out:json][timeout:22];
+  relation(around:${radius},${pos.lat},${pos.lng})["route"~"^(hiking|foot|walking)$"];
+  out tags bb;`;
 
  try{
-  const result=await fetchOverpass(q);
+  const tagsResult=await fetchOverpass(tagsQuery);
+  const candidateIds=selectNearbyRouteCandidates(tagsResult.data.elements||[],pos);
+
+  if(!candidateIds.length){
+   status.textContent="Aucune promenade référencée dans ce rayon";
+   el.innerHTML=`<div class="card"><p>Aucun itinéraire pédestre public référencé n’a été trouvé dans un rayon de ${nearHikeRadius} km.</p><p class="meta">Cela ne veut pas dire qu’il n’existe aucune promenade à proximité : seulement qu’aucun itinéraire exploitable n’est référencé par la source dans ce rayon. Essaie 10 ou 20 km.</p></div>`;
+   return;
+  }
+
+  const geomQuery=`[out:json][timeout:25];relation(id:${candidateIds.join(",")});out geom;`;
+  const result=await fetchOverpass(geomQuery);
   const data=result.data;
   const seen=new Set();
 
   const rows=(data.elements||[]).map(x=>{
    const t=x.tags||{};
-   if(t.type==="network"||t.type==="superroute")return null; // réseau entier, pas une promenade
-   const rp=representativeRoutePoint(pos,x);
+   const {members:cappedMembers,truncated}=capRouteMembers(x.members,HIKE_MAX_GEOMETRY_POINTS,pos);
+   const capped={...x,members:cappedMembers};
+   const rp=representativeRoutePoint(pos,capped);
    if(!rp)return null;
-   const routeMeters=nearestRouteMeters(pos,x);
+   const routeMeters=nearestRouteMeters(pos,capped);
    const nearKm=routeMeters/1000;
    const name=t.name||t.ref||"Itinéraire pédestre sans nom";
    const key=(x.id+"|"+name).toLowerCase();
    if(seen.has(key))return null;
    seen.add(key);
-   // Longueur totale du tracé référencé (tous segments walkable confondus) : si c'est très
-   // long, ce n'est pas "une promenade" ponctuelle mais un itinéraire de grande randonnée
-   // ou un réseau étendu — on le signale au lieu de le faire passer pour une petite balade.
-   const totalMeters=sumLineMeters(routeGeometryGroups(x));
-   const totalKm=totalMeters/1000;
-   const extended=totalKm>25;
+   // Longueur totale : on préfère la distance déclarée par la source (tag distance/length),
+   // plus fiable que la somme de la géométrie téléchargée qui peut être tronquée par le plafond
+   // de points ci-dessus. Si c'est très long, ce n'est pas "une promenade" ponctuelle mais un
+   // itinéraire de grande randonnée — on le signale au lieu de le faire passer pour une balade.
+   const declaredKm=parseFloat(t.distance||t.length);
+   const computedKm=sumLineMeters(routeGeometryGroups(capped))/1000;
+   const totalKm=Number.isFinite(declaredKm)?declaredKm:computedKm;
+   const extended=truncated||totalKm>25;
    return {id:x.id,name,lat:rp.lat,lng:rp.lng,t,nearKm,totalKm,extended};
   }).filter(Boolean)
     .filter(x=>x.nearKm<=nearHikeRadius)
@@ -917,7 +999,7 @@ window.addEventListener("load",()=>{
 });
 
 /* ===== V0.3.4 : IGN + journée intelligente + historique ===== */
-const APP_VERSION = "0.5.7";
+const APP_VERSION = "0.5.8";
 let swRegistration = null;
 let refreshingForUpdate = false;
 
