@@ -1,4 +1,80 @@
-# Guadeloupe Compagnon v0.5.6
+# Guadeloupe Compagnon v0.5.8
+
+## v0.5.8 — la recherche de promenades ne téléchargeait plus aucune géométrie, puis téléchargeait trop
+
+Deux bugs enchaînés sur la même fonctionnalité, corrigés dans cette version :
+
+**1. `out geom tags;` supprimait silencieusement tout tracé.** La requête Overpass de
+`discoverNearbyHikes` combinait le modifieur de géométrie `geom` avec le niveau de verbosité
+`tags` (comme `ids`/`skel`/`body`/`tags`/`meta`) : `tags` ne charge pas le corps complet de
+l'élément, dont `geom` a pourtant besoin pour y accrocher les coordonnées. Résultat : chaque
+relation renvoyée n'avait ni `members` ni géométrie, donc plus aucune promenade n'était jamais
+affichée (0 résultat à 5 km comme à 20 km), indépendamment du filtre `type=network`/`superroute`
+et du filtrage par rôle retiré en v0.5.7 (qui n'étaient pour rien dans ce bug).
+
+**2. Le correctif immédiat (`out geom;` seul) téléchargeait la géométrie complète et non
+tronquée de chaque itinéraire matché** — y compris des GR de plusieurs centaines de km dont
+seul un segment passe à proximité (GR 121 Liège→Bruxelles = 300 km entièrement téléchargés
+pour une recherche à 5 km). Résultat : réponses de plusieurs Mo, dépassant régulièrement le
+délai côté client ou le nombre de tentatives sur les miroirs Overpass publics → message
+« Service de recherche indisponible » alors que le GPS et l'API fonctionnaient.
+
+La requête est maintenant faite en 3 temps :
+1. liste des relations proches avec seulement tags + bounding box (`out tags bb;`, réponse
+   légère même avec des centaines de relations autour du point) ;
+2. côté app, exclusion des super-relations "réseau" (`type=network`/`superroute`, comme avant)
+   et des relations dont la bounding box dépasse 18 km de diagonale (trop étendues pour être
+   une promenade ponctuelle : GR, itinéraires de pèlerinage...), puis on ne garde que les 70
+   candidates les plus proches (distance point→bounding box, qui ne peut jamais écarter à tort
+   un itinéraire réellement proche) ;
+3. téléchargement de la géométrie complète uniquement pour ces survivantes, en un seul appel
+   groupé par id.
+
+Un plafond de 4000 points de géométrie par itinéraire a aussi été ajouté comme garde-fou
+(troncature + mention « itinéraire étendu »), pour qu'un futur GR ne puisse plus jamais faire
+exploser la réponse même s'il passait le filtre de bounding box.
+
+Testé en conditions réelles sur 3 zones (Liège, Sainte-Anne en Guadeloupe, Bouillon en
+Ardennes), 5/10/20 km : de 0 résultat dans une zone peu dense (Sainte-Anne, 5 km — confirmé
+non lié au filtre, aucune relation n'est déjà renvoyée par l'étape 1) à 70 candidates
+plafonnées dans les zones denses (jusqu'à 554 relations brutes trouvées à 20 km autour de
+Liège) ; réponse complète en 1 à 27 s selon le rayon et la charge des miroirs Overpass publics
+au moment du test, sans timeout, contre des échecs systématiques ou des réponses de plusieurs
+Mo avant ce correctif. Le comportement visible pour l'utilisateur (cartes, bouton
+« PARCOURS + TEMPS » avec tracé complet, limite de 25 résultats affichés) est inchangé.
+
+**Timeout client/serveur incohérents.** Le délai d'abandon côté client (`fetchOverpass` dans
+`app.js`) était de 30 s, alors que le serveur (`api/hikes.js`) peut mettre jusqu'à 54 s dans le
+pire cas (3 miroirs Overpass essayés en cascade, 18 s chacun) — un cas mesuré à 26,9 s en
+conditions réelles (Bouillon, 20 km) s'approchait dangereusement de cette limite. Le navigateur
+pouvait donc abandonner et afficher « Service de recherche indisponible » alors que le serveur
+était encore en train d'essayer un miroir suivant qui aurait fini par répondre. Le timeout
+client passe à 60 s (`discoverNearbyHikes` fait 2 appels séquentiels — tags+bb puis géométrie —
+ce délai s'applique à chacun indépendamment), ce qui reste cohérent avec le pire cas serveur
+inchangé (54 s) tout en gardant une marge.
+
+**Le plafond de points par itinéraire tronquait dans le mauvais ordre.** `capRouteMembers`
+gardait les segments (`members`) dans l'ordre OSM d'origine de la relation, sans rapport avec
+la position de l'utilisateur — si un itinéraire dépassait le plafond de 4000 points, le
+segment réellement le plus proche pouvait se trouver dans la portion tronquée, faussant la
+distance affichée. Vérifié sur des données réelles (relations autour de Liège, plafond abaissé
+artificiellement pour forcer la troncature) : jusqu'à ~2 km d'écart entre la distance affichée
+et la vraie distance. Les segments sont maintenant triés par proximité avant troncature, donc
+le plus proche est toujours conservé en premier. Aucun itinéraire rencontré dans nos zones de
+test (Liège, Sainte-Anne, Bouillon) n'a réellement dépassé 4000 points — mais le correctif
+s'applique dès qu'un futur itinéraire le ferait.
+
+## v0.5.7 — retrait du filtrage par rôle (qui faisait disparaître tous les résultats)
+
+La v0.5.4 avait aussi ajouté un filtrage des membres de relation par "rôle" OSM (pour ignorer
+des segments non marchables comme des limites administratives). C'était une supposition non
+vérifiée sur la façon dont les tronçons de marche réels sont tagués localement — et elle a fait
+disparaître TOUS les résultats à 5 km et 10 km, y compris des itinéraires bien réels.
+
+- ce filtrage par rôle est retiré ; tous les membres de la relation comptent à nouveau pour le
+  calcul de distance et de tracé, comme en v0.5.3 ;
+- seule l'exclusion des réseaux régionaux entiers par tag `type=network`/`superroute`
+  (v0.5.6, qui ne touche pas à la géométrie) est conservée.
 
 ## v0.5.6 — correctif de régression sur la recherche de promenades
 
