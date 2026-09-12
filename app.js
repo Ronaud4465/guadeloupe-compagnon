@@ -85,6 +85,45 @@ notify.onclick=async()=>{if(!("Notification"in window))return openModal("Notific
 renderHomes();renderToday();renderPlaces();
 if("serviceWorker"in navigator)navigator.serviceWorker.register("/sw.js");
 
+
+async function changeVaultPin(){
+ if(!vaultKey)return openModal("Coffre","Déverrouillez d’abord le coffre.");
+ const pin=document.getElementById("newVaultPin").value.trim();
+ const confirmPin=document.getElementById("confirmVaultPin").value.trim();
+ if(pin.length<4)return openModal("Nouveau code","Choisissez un code d’au moins 4 chiffres.");
+ if(pin!==confirmPin)return openModal("Nouveau code","Les deux codes ne correspondent pas.");
+ try{
+  const rows=await getAllVaultRows();
+  const salt=rand(16);
+  const newKey=await deriveVaultKey(pin,salt);
+  const converted=[];
+  for(const row of rows){
+   const m=await decJSON(row.meta,vaultKey);
+   const bytes=await decryptBytes({iv:row.iv,data:row.data},vaultKey);
+   const enc=await encryptBytes(bytes,newKey);
+   const meta=await encJSON(m,newKey);
+   converted.push({...row,meta,iv:enc.iv,data:enc.data});
+  }
+  const db=await openVaultDB();
+  await new Promise((resolve,reject)=>{
+   const tx=db.transaction(VAULT_STORE,"readwrite");
+   const store=tx.objectStore(VAULT_STORE);
+   converted.forEach(row=>store.put(row));
+   tx.oncomplete=resolve; tx.onerror=()=>reject(tx.error); tx.onabort=()=>reject(tx.error||new Error("transaction annulée"));
+  });
+  const check=await encJSON({ok:"GUAD-V03"},newKey);
+  localStorage.setItem(VAULT_META,JSON.stringify({salt:b64(salt),check}));
+  vaultKey=newKey;
+  document.getElementById("newVaultPin").value="";
+  document.getElementById("confirmVaultPin").value="";
+  document.getElementById("changePinBox").classList.add("hidden");
+  await renderVaultDocs();
+  openModal("Code modifié","Le nouveau code est actif et les documents du coffre ont été rechiffrés.");
+ }catch(e){
+  openModal("Modification impossible","Le code n’a pas été modifié. Vos documents restent avec le code actuel.");
+ }
+}
+
 window.addEventListener("load",()=>{
  if(S.pos && Date.now()-S.pos.at<3600000) setGps(`Dernière position connue — précision ±${S.pos.accuracy||"?"} m`,true);
 });
@@ -236,16 +275,58 @@ async function deleteVaultDoc(id){
  renderVaultDocs();
 }
 
+
+async function changeVaultPin(){
+ if(!vaultKey)return openModal("Coffre","Déverrouillez d’abord le coffre.");
+ const pin=document.getElementById("newVaultPin").value.trim();
+ const confirmPin=document.getElementById("confirmVaultPin").value.trim();
+ if(pin.length<4)return openModal("Nouveau code","Choisissez un code d’au moins 4 chiffres.");
+ if(pin!==confirmPin)return openModal("Nouveau code","Les deux codes ne correspondent pas.");
+ try{
+  const rows=await getAllVaultRows();
+  const salt=rand(16);
+  const newKey=await deriveVaultKey(pin,salt);
+  const converted=[];
+  for(const row of rows){
+   const m=await decJSON(row.meta,vaultKey);
+   const bytes=await decryptBytes({iv:row.iv,data:row.data},vaultKey);
+   const enc=await encryptBytes(bytes,newKey);
+   const meta=await encJSON(m,newKey);
+   converted.push({...row,meta,iv:enc.iv,data:enc.data});
+  }
+  const db=await openVaultDB();
+  await new Promise((resolve,reject)=>{
+   const tx=db.transaction(VAULT_STORE,"readwrite");
+   const store=tx.objectStore(VAULT_STORE);
+   converted.forEach(row=>store.put(row));
+   tx.oncomplete=resolve; tx.onerror=()=>reject(tx.error); tx.onabort=()=>reject(tx.error||new Error("transaction annulée"));
+  });
+  const check=await encJSON({ok:"GUAD-V03"},newKey);
+  localStorage.setItem(VAULT_META,JSON.stringify({salt:b64(salt),check}));
+  vaultKey=newKey;
+  document.getElementById("newVaultPin").value="";
+  document.getElementById("confirmVaultPin").value="";
+  document.getElementById("changePinBox").classList.add("hidden");
+  await renderVaultDocs();
+  openModal("Code modifié","Le nouveau code est actif et les documents du coffre ont été rechiffrés.");
+ }catch(e){
+  openModal("Modification impossible","Le code n’a pas été modifié. Vos documents restent avec le code actuel.");
+ }
+}
+
 window.addEventListener("load",()=>{
  const u=document.getElementById("unlockVault"); if(u)u.onclick=createOrUnlockVault;
  const l=document.getElementById("lockVault"); if(l)l.onclick=lockVault;
+ const sp=document.getElementById("showChangePin"); if(sp)sp.onclick=()=>document.getElementById("changePinBox").classList.remove("hidden");
+ const cp=document.getElementById("changeVaultPin"); if(cp)cp.onclick=changeVaultPin;
+ const cc=document.getElementById("cancelChangePin"); if(cc)cc.onclick=()=>document.getElementById("changePinBox").classList.add("hidden");
  const r=document.getElementById("refreshDocs"); if(r)r.onclick=renderVaultDocs;
  const c=document.getElementById("cameraInput"); if(c)c.onchange=e=>{addVaultFile(e.target.files[0]);e.target.value=""};
  const f=document.getElementById("fileInput"); if(f)f.onchange=e=>{addVaultFile(e.target.files[0]);e.target.value=""};
 });
 
-/* ===== V0.3.1 : mises à jour PWA fiables ===== */
-const APP_VERSION = "0.3.1";
+/* ===== V0.3.2 : mises à jour PWA fiables ===== */
+const APP_VERSION = "0.3.2";
 let swRegistration = null;
 let refreshingForUpdate = false;
 

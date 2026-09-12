@@ -3,7 +3,7 @@
 <meta name="theme-color" content="#0a675e"><title>Guadeloupe Compagnon</title>
 <link rel="manifest" href="/manifest.webmanifest"><link rel="stylesheet" href="/style.css">
 </head><body>
-<header><div><b>🌴 Guadeloupe 2027</b><small>1 → 22 janvier · compagnon de voyage · <span id="appVersion">v0.3.1</span></small></div><button id="locate" title="État GPS">📍</button></header>
+<header><div><b>🌴 Guadeloupe 2027</b><small>1 → 22 janvier · compagnon de voyage · <span id="appVersion">v0.3.2</span></small></div><button id="locate" title="État GPS">📍</button></header>
 <nav>
 <button data-tab="today" class="active">☀️<span>Aujourd’hui</span></button>
 <button data-tab="discover">🌴<span>Découvrir</span></button>
@@ -51,6 +51,14 @@
   <div id="vaultOpen" class="hidden">
     <div class="vaultState">🟢 Coffre déverrouillé sur cet appareil</div>
     <button class="ghost wide" id="lockVault">Verrouiller</button>
+    <button class="ghost wide" id="showChangePin">🔑 Modifier le code PIN</button>
+    <div id="changePinBox" class="hidden" style="margin-top:12px">
+      <input id="newVaultPin" type="password" inputmode="numeric" autocomplete="new-password" placeholder="Nouveau code (4 chiffres minimum)">
+      <input id="confirmVaultPin" type="password" inputmode="numeric" autocomplete="new-password" placeholder="Confirmer le nouveau code">
+      <button class="primary wide" id="changeVaultPin">Enregistrer le nouveau code</button>
+      <button class="ghost wide" id="cancelChangePin">Annuler</button>
+      <p class="meta">Tous les documents seront rechiffrés avec le nouveau code. Aucun document n’est supprimé.</p>
+    </div>
   </div>
 </div>
 
@@ -92,7 +100,7 @@
 <section id="settings" class="tab">
 <div class="sectionHead"><h1>Notre voyage</h1><p>Les logements sont modifiables dès que vous avez les adresses exactes.</p></div>
 <div id="homes"></div>
-<div class="card updateCard"><div class="titleRow"><h2>🔄 Mise à jour</h2><span class="versionBadge">v0.3.1</span></div><p id="updateText">L’application vérifie automatiquement les nouvelles versions.</p><button id="checkUpdate" class="ghost wide">Vérifier maintenant</button></div>
+<div class="card updateCard"><div class="titleRow"><h2>🔄 Mise à jour</h2><span class="versionBadge">v0.3.2</span></div><p id="updateText">L’application vérifie automatiquement les nouvelles versions.</p><button id="checkUpdate" class="ghost wide">Vérifier maintenant</button></div>
 <div class="card"><h2>🔔 Notifications</h2><p>Autorisez-les pour les alertes utiles pendant que l’application est utilisée. Les notifications push en arrière-plan seront la prochaine étape.</p><button id="notify" class="primary">Autoriser les notifications</button></div>
 <div class="card"><h2>Règles de l’assistant</h2><p>✓ Le programme choisi reste prioritaire.<br>✓ Aucune visite n’est remplacée sans votre accord.<br>✓ En cas de retard : continuer, reporter ou voir une alternative.<br>✓ Une visite reportée n’est jamais supprimée.<br>✓ Les 💎 sont rares et réservées aux vraies pépites.</p></div>
 </section>
