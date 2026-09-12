@@ -15,3 +15,11 @@ Nouveautés principales :
 - conservation IGN, coffre chiffré, scanner recto-verso, PIN et mises à jour automatiques.
 
 Note : les temps routiers affichés dans l'app sont des estimations pratiques. La navigation Google Maps reste la référence pour le trafic réel au moment du départ.
+
+
+## V0.4.1
+- Choix de navigation : Google Maps, Waze ou toujours demander.
+- Préférence mémorisée dans Voyage.
+- Retour logement utilise la navigation choisie.
+- Parcours multi-étapes : Google Maps affiche le parcours complet ; Waze fonctionne étape par étape.
+- Accès IGN clarifié : Autour > Randonnées & promenades > Carte IGN.

@@ -1,4 +1,4 @@
-const CACHE = "gw040-intelligent-v1";
+const CACHE = "gw0411-intelligent-v1";
 const STATIC_FILES = ["/style.css","/app.js","/data.js","/manifest.webmanifest","/icon.svg"];
 self.addEventListener("install",e=>{self.skipWaiting();e.waitUntil(caches.open(CACHE).then(c=>c.addAll(STATIC_FILES)))});
 self.addEventListener("activate",e=>{e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>x!==CACHE).map(x=>caches.delete(x)))).then(()=>self.clients.claim()))});

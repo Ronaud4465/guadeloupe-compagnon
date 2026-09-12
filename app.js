@@ -3,12 +3,34 @@ const P=window.GUADELOUPE_PLACES;
 const defaults={today:[],done:[],history:[],hideDone:false,delay:0,notes:"",custom:[],homes:[
 {name:"Sainte-Anne",from:"2027-01-01",to:"2027-01-08",lat:16.2264,lng:-61.3850},
 {name:"Deshaies",from:"2027-01-08",to:"2027-01-15",lat:16.3067,lng:-61.7925},
-{name:"Bouillante",from:"2027-01-15",to:"2027-01-22",lat:16.1300,lng:-61.7690}],pos:null};
+{name:"Bouillante",from:"2027-01-15",to:"2027-01-22",lat:16.1300,lng:-61.7690}],pos:null,navPreference:"ask"};
 let S=Object.assign({},defaults,JSON.parse(localStorage.getItem("gw02")||"{}"));
 const save=()=>localStorage.setItem("gw02",JSON.stringify(S));
 const all=()=>P.concat(S.custom||[]);
 function activeHome(){let d=new Date().toISOString().slice(0,10);return S.homes.find(h=>d>=h.from&&d<h.to)||S.homes[0]}
 function maps(dest){return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest)}&travelmode=driving`}
+function waze(dest){return `https://www.waze.com/ul?q=${encodeURIComponent(dest)}&navigate=yes`}
+function launchNav(dest, provider){location.href=provider==="waze"?waze(dest):maps(dest)}
+function navigateTo(dest){
+ const pref=S.navPreference||"ask";
+ if(pref==="google"||pref==="waze")return launchNav(dest,pref);
+ openModal("Choisir la navigation","Avec quelle application voulez-vous effectuer ce trajet ?",[
+  {label:"🗺️ Google Maps",go:()=>launchNav(dest,"google")},
+  {label:"🚗 Waze",go:()=>launchNav(dest,"waze")}
+ ]);
+}
+window.navigateTo=navigateTo;
+function navigateRoute(stops){
+ if(!stops.length)return;
+ const pref=S.navPreference||"ask";
+ const google=()=>{let d=stops.at(-1),wp=stops.slice(0,-1).join("|");let u=maps(d);if(wp)u+="&waypoints="+encodeURIComponent(wp);location.href=u};
+ const wz=()=>launchNav(stops[0],"waze");
+ if(pref==="google")return google();
+ if(pref==="waze")return wz();
+ openModal("Démarrer le parcours",stops.length>1?"Google Maps peut afficher toutes les étapes. Waze vous guidera vers la première étape, puis le compagnon ouvrira la suivante.":"Choisissez votre application de navigation.",[
+  {label:"🗺️ Google Maps",go:google},{label:"🚗 Waze",go:wz}
+ ]);
+}
 function searchMaps(q){let c=S.pos?`${S.pos.lat},${S.pos.lng}`:`${activeHome().lat},${activeHome().lng}`;return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q+" near "+c)}`}
 function km(a,b){const R=6371,x=(b.lat-a.lat)*Math.PI/180,y=(b.lng-a.lng)*Math.PI/180;return R*Math.sqrt(x*x+(Math.cos(a.lat*Math.PI/180)*y)**2)}
 function openModal(t,x,actions=[]){modalTitle.textContent=t;modalText.textContent=x;modalActions.innerHTML="";actions.forEach(a=>{let b=document.createElement("button");b.textContent=a.label;b.onclick=()=>{a.go();modal.classList.add("hidden")};modalActions.appendChild(b)});modal.classList.remove("hidden")}
@@ -41,14 +63,14 @@ function renderToday(){
  const today=(S.today||[]).filter(id=>!isDone(id));
  dayList.innerHTML=all().filter(p=>!isDone(p.id)).map(p=>`<div class="card place"><input type="checkbox" data-day="${p.id}" ${today.includes(p.id)?"checked":""}><div><h3>${p.priority==="gem"?"💎":p.priority==="star"?"⭐":""} ${p.name}</h3><div class="meta">${p.cat} · env. ${p.duration||60} min</div><span class="tag">${p.note||"Lieu ajouté"}</span>${HIKES[p.id]?`<div class="miniHike">🥾 ${HIKES[p.id].difficulty} · ${HIKES[p.id].duration}</div>`:""}</div><div class="todayActions"><button class="ghost" data-go="${p.id}">🧭</button>${today.includes(p.id)?`<button class="doneBtn" onclick="markDone('${p.id}')">✓ Fait</button>`:""}</div></div>`).join("");
  document.querySelectorAll("[data-day]").forEach(c=>c.onchange=()=>{S.today=c.checked?[...new Set([...(S.today||[]),c.dataset.day])]:(S.today||[]).filter(x=>x!==c.dataset.day);save();renderToday()});
- document.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>{let p=all().find(x=>x.id===b.dataset.go);location.href=maps(p.lat?`${p.lat},${p.lng}`:p.query||p.name)});
+ document.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>{let p=all().find(x=>x.id===b.dataset.go);navigateTo(p.lat?`${p.lat},${p.lng}`:p.query||p.name)});
  const summary=document.getElementById("dayProgress"); if(summary)summary.textContent=`${today.length} à faire aujourd’hui · ${(S.done||[]).length} déjà effectuée(s) pendant le voyage`;
 }
 function renderPlaces(){
  let q=(search.value||"").toLowerCase(),w=week.value;
  let arr=all().filter(p=>(w==="all"||String(p.week)===w)&&p.name.toLowerCase().includes(q));
  if(S.hideDone)arr=arr.filter(p=>!isDone(p.id));
- placeList.innerHTML=arr.map(p=>{let done=isDone(p.id);return `<div class="card ${done?'completedPlace':''}"><div class="titleRow"><h2>${done?'✓ ':p.priority==="gem"?'💎 ':p.priority==="star"?'⭐ ':''}${p.name}</h2>${done?'<span class="doneBadge">FAIT</span>':''}</div><div class="meta">${p.cat||"Lieu personnel"} · ${p.duration||60} min</div><p>${p.note||""}</p>${HIKES[p.id]?hikeInline(p):''}<div class="placeBtns">${done?`<button class="ghost" onclick="restorePlace('${p.id}')">↩ Remettre à visiter</button>`:`<button class="primary" onclick="location.href=maps('${p.lat?`${p.lat},${p.lng}`:(p.query||p.name).replaceAll("'","")}')">🧭 Y aller</button><button class="ghost" onclick="toggleDay('${p.id}')">${(S.today||[]).includes(p.id)?"✓ Dans la journée":"+ Journée"}</button><button class="doneBtn" onclick="markDone('${p.id}')">✓ Fait</button>`}${p.custom?`<button class="ghost" onclick="removeCustom('${p.id}')">Supprimer</button>`:""}</div></div>`}).join("")
+ placeList.innerHTML=arr.map(p=>{let done=isDone(p.id);return `<div class="card ${done?'completedPlace':''}"><div class="titleRow"><h2>${done?'✓ ':p.priority==="gem"?'💎 ':p.priority==="star"?'⭐ ':''}${p.name}</h2>${done?'<span class="doneBadge">FAIT</span>':''}</div><div class="meta">${p.cat||"Lieu personnel"} · ${p.duration||60} min</div><p>${p.note||""}</p>${HIKES[p.id]?hikeInline(p):''}<div class="placeBtns">${done?`<button class="ghost" onclick="restorePlace('${p.id}')">↩ Remettre à visiter</button>`:`<button class="primary" onclick="navigateTo('${p.lat?`${p.lat},${p.lng}`:(p.query||p.name).replaceAll("'","")}')">🧭 Y aller</button><button class="ghost" onclick="toggleDay('${p.id}')">${(S.today||[]).includes(p.id)?"✓ Dans la journée":"+ Journée"}</button><button class="doneBtn" onclick="markDone('${p.id}')">✓ Fait</button>`}${p.custom?`<button class="ghost" onclick="removeCustom('${p.id}')">Supprimer</button>`:""}</div></div>`}).join("")
  const hd=document.getElementById('hideDone'); if(hd)hd.textContent=S.hideDone?'Afficher aussi les lieux faits':'Masquer les lieux faits';
 }
 window.toggleDay=id=>{if(isDone(id))return;S.today=(S.today||[]).includes(id)?S.today.filter(x=>x!==id):[...(S.today||[]),id];save();renderPlaces();renderToday()}
@@ -73,8 +95,8 @@ function analyze(){
  ])
 }
 optimize.onclick=analyze;delay30.onclick=()=>{S.delay=30;save();analyze()};delay90.onclick=()=>{S.delay=90;save();analyze()};onTime.onclick=()=>{S.delay=0;save();advice.innerHTML='<div class="adviceResult">À l’heure : programme choisi conservé.</div>'}
-routeBtn.onclick=()=>{let a=(S.today||[]).filter(id=>!isDone(id)).map(id=>all().find(p=>p.id===id)).filter(Boolean);if(!a.length)return openModal("Parcours","Choisissez au moins une visite.");let d=a.at(-1),wp=a.slice(0,-1).map(p=>p.lat?`${p.lat},${p.lng}`:p.query||p.name).join("|");let u=maps(d.lat?`${d.lat},${d.lng}`:d.query||d.name);if(wp)u+="&waypoints="+encodeURIComponent(wp);location.href=u}
-homeBtn.onclick=()=>{let h=activeHome();location.href=maps(`${h.lat},${h.lng}`)}
+routeBtn.onclick=()=>{let a=(S.today||[]).filter(id=>!isDone(id)).map(id=>all().find(p=>p.id===id)).filter(Boolean);if(!a.length)return openModal("Parcours","Choisissez au moins une visite.");let stops=a.map(p=>p.lat?`${p.lat},${p.lng}`:p.query||p.name);navigateRoute(stops)}
+homeBtn.onclick=()=>{let h=activeHome();navigateTo(`${h.lat},${h.lng}`)}
 
 const HIKES={
  "soufriere":{difficulty:"Soutenu",duration:"3 h 30–4 h 30",distance:"env. 6 km A/R",note:"Sommet exposé : météo et accès à contrôler le matin."},
@@ -85,7 +107,7 @@ const HIKES={
  "ecrevisses":{difficulty:"Facile",duration:"45 min–1 h 15",distance:"courte promenade",note:"Accès aménagé, fréquenté."}
 };
 let ignMap=null,ignMarker=null,gpsMarker=null;
-function hikeInline(p){const h=HIKES[p.id];return `<div class="hikeBox"><b>🥾 Promenade / randonnée</b><div>${h.distance} · ${h.duration} · ${h.difficulty}</div><small>${h.note}</small><div class="placeBtns"><button class="ignBtn" onclick="openIgnMap('${p.id}')">🗺️ Carte IGN</button><button class="ghost" onclick="location.href=maps('${p.lat},${p.lng}')">🚗 Parking / départ</button></div></div>`}
+function hikeInline(p){const h=HIKES[p.id];return `<div class="hikeBox"><b>🥾 Promenade / randonnée</b><div>${h.distance} · ${h.duration} · ${h.difficulty}</div><small>${h.note}</small><div class="placeBtns"><button class="ignBtn" onclick="openIgnMap('${p.id}')">🗺️ Carte IGN</button><button class="ghost" onclick="navigateTo('${p.lat},${p.lng}')">🚗 Parking / départ</button></div></div>`}
 function renderHikes(){
  const el=document.getElementById('hikeList'); if(!el)return;
  el.innerHTML=Object.keys(HIKES).map(id=>all().find(p=>p.id===id)).filter(Boolean).map(p=>`<div class="card ${isDone(p.id)?'completedPlace':''}"><div class="titleRow"><h2>${isDone(p.id)?'✓ ':''}🥾 ${p.name}</h2>${isDone(p.id)?'<span class="doneBadge">FAIT</span>':''}</div>${hikeInline(p)}${!isDone(p.id)?`<button class="doneBtn wide" onclick="markDone('${p.id}')">✓ Marquer comme fait</button>`:`<button class="ghost wide" onclick="restorePlace('${p.id}')">↩ Remettre à visiter</button>`}</div>`).join('');
@@ -143,6 +165,9 @@ notify.onclick=async()=>{if(!("Notification"in window))return openModal("Notific
 const hideDoneBtn=document.getElementById('hideDone'); if(hideDoneBtn)hideDoneBtn.onclick=()=>{S.hideDone=!S.hideDone;save();renderPlaces()};
 const closeIgnBtn=document.getElementById('closeIgnMap'); if(closeIgnBtn)closeIgnBtn.onclick=closeIgn;
 const useGpsIgn=document.getElementById('ignUseGps'); if(useGpsIgn)useGpsIgn.onclick=()=>locate(pos=>{if(ignMap){if(gpsMarker)ignMap.removeLayer(gpsMarker);gpsMarker=L.circleMarker([pos.lat,pos.lng],{radius:8}).addTo(ignMap).bindPopup('Votre position GPS').openPopup();ignMap.setView([pos.lat,pos.lng],15)}});
+
+const navPrefEl=document.getElementById("navPreference");
+if(navPrefEl){navPrefEl.value=S.navPreference||"ask";navPrefEl.onchange=()=>{S.navPreference=navPrefEl.value;save();openModal("Navigation enregistrée",navPrefEl.value==="google"?"Google Maps sera utilisé par défaut.":navPrefEl.value==="waze"?"Waze sera utilisé par défaut.":"L’application vous demandera à chaque trajet.")}}
 renderHomes();renderToday();renderPlaces();renderHistory();renderHikes();
 if("serviceWorker"in navigator)navigator.serviceWorker.register("/sw.js");
 
@@ -578,14 +603,14 @@ function renderToday(){
  const h=activeHome();homeName.textContent=h.name; const ids=(S.today||[]).filter(eligibleToday);const chosen=ids.map(id=>all().find(p=>p.id===id)).filter(Boolean);
  dayList.innerHTML=all().filter(p=>!isDone(p.id)||isRevisit(p.id)).map(p=>`<div class="card place"><input type="checkbox" data-day="${p.id}" ${ids.includes(p.id)?"checked":""}><div><h3>${isRevisit(p.id)?"↻ ":p.priority==="gem"?"💎 ":p.priority==="star"?"⭐ ":""}${p.name}</h3><div class="meta">${p.cat} · ${pDurationText(p)}</div><span class="tag">${p.note||"Lieu ajouté"}</span>${HIKES[p.id]?`<div class="miniHike">🥾 ${HIKES[p.id].difficulty} · ${HIKES[p.id].duration}</div>`:""}</div><div class="todayActions"><button class="ghost" data-go="${p.id}">🧭</button>${ids.includes(p.id)?`<button class="doneBtn" onclick="markDone('${p.id}')">✓ Fait</button>`:""}</div></div>`).join("");
  document.querySelectorAll("[data-day]").forEach(c=>c.onchange=()=>{S.today=c.checked?[...new Set([...(S.today||[]),c.dataset.day])]:(S.today||[]).filter(x=>x!==c.dataset.day);if(!c.checked)S.revisit=(S.revisit||[]).filter(x=>x!==c.dataset.day);save();renderToday()});
- document.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>{let p=all().find(x=>x.id===b.dataset.go);location.href=maps(p.lat?`${p.lat},${p.lng}`:p.query||p.name)});
+ document.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>{let p=all().find(x=>x.id===b.dataset.go);navigateTo(p.lat?`${p.lat},${p.lng}`:p.query||p.name)});
  const summary=document.getElementById("dayProgress");if(summary)summary.textContent=`${chosen.length} étape${chosen.length>1?'s':''} aujourd’hui · ${(S.history||[]).length} visite(s) enregistrée(s) dans l’historique`;
  renderRouteSummary();
 }
 function renderPlaces(){
  let q=(search.value||"").toLowerCase(),w=week.value;let arr=all().filter(p=>(w==="all"||String(p.week)===w)&&p.name.toLowerCase().includes(q));if(S.hideDone)arr=arr.filter(p=>!isDone(p.id));
  arr.sort((a,b)=>sectorStatus(a).rank-sectorStatus(b).rank||scorePlace(b)-scorePlace(a));
- placeList.innerHTML=arr.map(p=>{let done=isDone(p.id),sec=sectorStatus(p);return `<div class="card ${done?'completedPlace ':''}${sec.rank===0?'zoneGood':sec.rank===1?'zoneLater':'zoneFar'}"><div class="titleRow"><h2>${done?'✓ ':p.priority==="gem"?'💎 ':p.priority==="star"?'⭐ ':''}${p.name}</h2>${done?'<span class="doneBadge">FAIT</span>':''}</div><span class="sectorBadge ${sec.cls}">${sec.label}</span>${weatherLabel(p)}<div class="meta">${p.cat||"Lieu personnel"} · ${pDurationText(p)} · depuis ${activeHome().name}: ${p.lat?`${fmtKm(roadKm(activeHome(),p))} km · env. ${driveMin(activeHome(),p)} min`:"distance inconnue"}</div><p>${p.note||""}</p>${HIKES[p.id]?hikeInline(p):''}<div class="placeBtns">${done?`<button class="revisitBtn" onclick="addRevisit('${p.id}')">↻ Refaire cette visite</button><button class="ghost" onclick="restorePlace('${p.id}')">↩ Retirer de l’historique</button>`:`<button class="primary" onclick="location.href=maps('${p.lat?`${p.lat},${p.lng}`:(p.query||p.name).replaceAll("'","")}')">🧭 Y aller</button><button class="ghost" onclick="toggleDay('${p.id}')">${(S.today||[]).includes(p.id)?"✓ Dans la journée":"+ Journée"}</button><button class="doneBtn" onclick="markDone('${p.id}')">✓ Fait</button>`}${p.custom?`<button class="ghost" onclick="removeCustom('${p.id}')">Supprimer</button>`:""}</div></div>`}).join("");
+ placeList.innerHTML=arr.map(p=>{let done=isDone(p.id),sec=sectorStatus(p);return `<div class="card ${done?'completedPlace ':''}${sec.rank===0?'zoneGood':sec.rank===1?'zoneLater':'zoneFar'}"><div class="titleRow"><h2>${done?'✓ ':p.priority==="gem"?'💎 ':p.priority==="star"?'⭐ ':''}${p.name}</h2>${done?'<span class="doneBadge">FAIT</span>':''}</div><span class="sectorBadge ${sec.cls}">${sec.label}</span>${weatherLabel(p)}<div class="meta">${p.cat||"Lieu personnel"} · ${pDurationText(p)} · depuis ${activeHome().name}: ${p.lat?`${fmtKm(roadKm(activeHome(),p))} km · env. ${driveMin(activeHome(),p)} min`:"distance inconnue"}</div><p>${p.note||""}</p>${HIKES[p.id]?hikeInline(p):''}<div class="placeBtns">${done?`<button class="revisitBtn" onclick="addRevisit('${p.id}')">↻ Refaire cette visite</button><button class="ghost" onclick="restorePlace('${p.id}')">↩ Retirer de l’historique</button>`:`<button class="primary" onclick="navigateTo('${p.lat?`${p.lat},${p.lng}`:(p.query||p.name).replaceAll("'","")}')">🧭 Y aller</button><button class="ghost" onclick="toggleDay('${p.id}')">${(S.today||[]).includes(p.id)?"✓ Dans la journée":"+ Journée"}</button><button class="doneBtn" onclick="markDone('${p.id}')">✓ Fait</button>`}${p.custom?`<button class="ghost" onclick="removeCustom('${p.id}')">Supprimer</button>`:""}</div></div>`}).join("");
  const hd=document.getElementById('hideDone');if(hd)hd.textContent=S.hideDone?'Afficher aussi les lieux faits':'Masquer les lieux faits';
 }
 function renderHomes(){
