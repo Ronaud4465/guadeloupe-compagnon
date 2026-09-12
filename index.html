@@ -1,0 +1,53 @@
+<!doctype html><html lang="fr"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0a675e"><title>Guadeloupe Compagnon</title>
+<link rel="manifest" href="/manifest.webmanifest"><link rel="stylesheet" href="/style.css">
+</head><body>
+<header><div><b>🌴 Guadeloupe 2027</b><small>1 → 22 janvier · compagnon de voyage</small></div><button id="locate">◎</button></header>
+<nav>
+<button data-tab="today" class="active">☀️<span>Aujourd’hui</span></button>
+<button data-tab="discover">🌴<span>Découvrir</span></button>
+<button data-tab="near">💎<span>Autour</span></button>
+<button data-tab="docs">🎫<span>Infos</span></button>
+<button data-tab="settings">⚙️<span>Voyage</span></button>
+</nav>
+<main>
+<section id="today" class="tab active">
+<div class="hero"><div><small>BASE ACTIVE</small><h1 id="homeName">Sainte-Anne</h1><p id="dateHint">Votre programme reste toujours prioritaire.</p></div><button id="homeBtn">🏠 Retour logement</button></div>
+<div class="card"><div class="titleRow"><h2>Ma journée</h2><button class="ghost" id="optimize">Analyser</button></div><div id="dayList"></div><button class="primary wide" id="routeBtn">🧭 Démarrer le parcours choisi</button></div>
+<div id="advisor" class="card advisor"><h2>🧠 Journée intelligente</h2><p>Je conserve toujours vos choix. Si la journée prend du retard, je vous demande avant toute modification.</p><div class="actions"><button id="delay30">+30 min</button><button id="delay90">+1 h 30</button><button id="onTime">À l’heure</button></div><div id="advice"></div></div>
+</section>
+
+<section id="discover" class="tab">
+<div class="sectionHead"><h1>À visiter</h1><p>Ajoutez ou retirez librement les lieux.</p></div>
+<div class="filters"><input id="search" placeholder="Rechercher un lieu…"><select id="week"><option value="all">Toutes les zones</option><option value="1">Grande-Terre</option><option value="2">Deshaies / nord Basse-Terre</option><option value="3">Bouillante / sud Basse-Terre</option></select></div>
+<div id="placeList"></div>
+<div class="card"><h2>➕ Ajouter un lieu</h2><input id="newName" placeholder="Nom du lieu"><input id="newQuery" placeholder="Adresse ou recherche Google Maps"><button class="primary wide" id="addPlace">Ajouter</button></div>
+</section>
+
+<section id="near" class="tab">
+<div class="sectionHead"><h1>Autour de nous</h1><p>Marchés, animations, folklore, nautisme, restaurants et pépites.</p></div>
+<div class="nearGrid">
+<button data-near="marché local">🥭<b>Marchés</b></button><button data-near="événements aujourd'hui">🎉<b>Animations</b></button>
+<button data-near="régate voile nautisme">⛵<b>Nautisme</b></button><button data-near="gwoka culture créole">🪘<b>Folklore</b></button>
+<button data-near="restaurant créole">🍴<b>Manger</b></button><button data-near="bar local">🍹<b>Boire</b></button>
+</div>
+<div class="card gem"><h2>💎 Pépite à proximité</h2><p id="gemText">Activez votre position. L’app signalera uniquement les lieux vraiment remarquables à très faible détour.</p><button class="primary" id="checkGem">Chercher maintenant</button></div>
+<div class="card"><h2>⭐ Recherche libre autour de moi</h2><input id="nearQuery" placeholder="Ex. marché nocturne, bokit, artisan…"><button class="primary wide" id="nearSearch">Chercher à proximité</button></div>
+</section>
+
+<section id="docs" class="tab">
+<div class="sectionHead"><h1>Billets & informations</h1><p>Conservez les références utiles du voyage.</p></div>
+<div class="card"><h2>📝 Carnet</h2><textarea id="notes" rows="12" placeholder="Réservations, billets, horaires, restaurants, numéros utiles…"></textarea><button class="primary wide" id="saveNotes">Enregistrer</button></div>
+<div class="card"><h2>🎫 Documents</h2><p>Pour la V0.2, utilisez le carnet pour les références. L’import de billets/QR sera ajouté après validation de cette version en ligne.</p></div>
+</section>
+
+<section id="settings" class="tab">
+<div class="sectionHead"><h1>Notre voyage</h1><p>Les logements sont modifiables dès que vous avez les adresses exactes.</p></div>
+<div id="homes"></div>
+<div class="card"><h2>🔔 Notifications</h2><p>Autorisez-les pour les alertes utiles pendant que l’application est utilisée. Les notifications push en arrière-plan seront la prochaine étape.</p><button id="notify" class="primary">Autoriser les notifications</button></div>
+<div class="card"><h2>Règles de l’assistant</h2><p>✓ Le programme choisi reste prioritaire.<br>✓ Aucune visite n’est remplacée sans votre accord.<br>✓ En cas de retard : continuer, reporter ou voir une alternative.<br>✓ Une visite reportée n’est jamais supprimée.<br>✓ Les 💎 sont rares et réservées aux vraies pépites.</p></div>
+</section>
+</main>
+<div id="modal" class="modal hidden"><div class="modalBox"><h2 id="modalTitle"></h2><p id="modalText"></p><div id="modalActions"></div><button class="ghost wide" id="closeModal">Fermer</button></div></div>
+<script src="/data.js"></script><script src="/app.js"></script></body></html>

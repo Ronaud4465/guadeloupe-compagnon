@@ -1,0 +1,16 @@
+{
+  "name": "Guadeloupe Compagnon 2027",
+  "short_name": "Guadeloupe",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f8f7",
+  "theme_color": "#0a675e",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
