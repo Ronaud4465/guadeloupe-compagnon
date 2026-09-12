@@ -309,13 +309,13 @@ async function discoverNearbyHikes(pos){
  el.innerHTML='<div class="card"><p>🔎 Recherche d’itinéraires pédestres publics autour de votre position…</p><p class="meta">Plusieurs serveurs sont essayés automatiquement. Les durées et difficultés ne sont jamais inventées.</p></div>';
 
  const radius=Math.round(nearHikeRadius*1000);
- // On exclut les super-relations "réseau" (type=network / superroute) : ce sont des
- // regroupements de TOUT un territoire (ex. réseau points-noeuds régional), pas une
- // promenade précise. Sans ce filtre, une portion lointaine du réseau peut faire
- // apparaître le nom du réseau entier comme "proche" alors que la vraie promenade
- // marchable ne l'est pas.
+ // Note : l'exclusion des super-relations "réseau" (type=network / superroute) se fait
+ // plus bas, côté app, sur les tags reçus — PAS dans la requête Overpass elle-même.
+ // Combiner un filtre regex négatif avec un autre filtre regex dans la même requête est
+ // documenté comme instable selon les versions des serveurs Overpass (miroirs publics
+ // multiples, versions différentes), ce qui pouvait faire échouer toute la recherche.
  const q=`[out:json][timeout:22];(
-   relation(around:${radius},${pos.lat},${pos.lng})["route"~"^(hiking|foot|walking)$"]["type"!~"^(network|superroute)$"];
+   relation(around:${radius},${pos.lat},${pos.lng})["route"~"^(hiking|foot|walking)$"];
  );out geom tags;`;
 
  try{
@@ -325,6 +325,7 @@ async function discoverNearbyHikes(pos){
 
   const rows=(data.elements||[]).map(x=>{
    const t=x.tags||{};
+   if(t.type==="network"||t.type==="superroute")return null; // réseau entier, pas une promenade
    const rp=representativeRoutePoint(pos,x);
    if(!rp)return null;
    const routeMeters=nearestRouteMeters(pos,x);
@@ -369,6 +370,7 @@ async function discoverNearbyHikes(pos){
   el.innerHTML=`<div class="card">
     <p>⚠️ Le GPS fonctionne, mais aucun des serveurs de recherche de promenades n’a répondu.</p>
     <p class="meta">Ce n’est pas un problème de localisation. Réessaie dans quelques instants ; l’app bascule automatiquement entre plusieurs serveurs.</p>
+    <p class="meta">Détail technique : ${escHtml(e && e.message ? e.message : String(e))}</p>
   </div>`;
  }
 }
@@ -924,7 +926,7 @@ window.addEventListener("load",()=>{
 });
 
 /* ===== V0.3.4 : IGN + journée intelligente + historique ===== */
-const APP_VERSION = "0.5.5";
+const APP_VERSION = "0.5.6";
 let swRegistration = null;
 let refreshingForUpdate = false;
 

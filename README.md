@@ -1,4 +1,20 @@
-# Guadeloupe Compagnon v0.5.5
+# Guadeloupe Compagnon v0.5.6
+
+## v0.5.6 — correctif de régression sur la recherche de promenades
+
+La v0.5.4 avait ajouté un filtre `["type"!~"network|superroute"]` **directement dans la
+requête Overpass** pour exclure les réseaux régionaux entiers. Combiner un filtre regex
+négatif avec un autre filtre regex dans la même requête est connu pour être instable selon
+la version du serveur Overpass interrogé (comportement documenté côté Overpass-API) : ça
+pouvait faire échouer la requête sur un ou plusieurs des 3 miroirs, d'où le message
+« Service de recherche indisponible » apparaissant plus souvent qu'avant.
+
+- la requête Overpass est revenue à sa forme simple (celle de la v0.5.3) ;
+- l'exclusion des réseaux régionaux (`type=network`/`superroute`) se fait maintenant **côté
+  app**, sur les résultats déjà reçus — même effet, mais aucun risque de casser la requête
+  envoyée au serveur ;
+- en cas d'échec, le message affiche maintenant le détail technique de l'erreur, pour
+  distinguer plus vite une vraie panne réseau d'un bug côté app.
 
 ## v0.5.5 — suivi GPS en direct sur la carte
 
