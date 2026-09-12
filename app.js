@@ -1,3 +1,4 @@
+const APP_VERSION="0.4.6";
 
 const P=window.GUADELOUPE_PLACES;
 const defaults={today:[],done:[],history:[],hideDone:false,delay:0,notes:"",custom:[],homes:[
@@ -130,30 +131,86 @@ function osmDistance(tags){
  const d=tags.distance||tags.length;
  return d?`Distance indiquée : ${escHtml(d)}`:"Distance du parcours non renseignée";
 }
+
+const OVERPASS_ENDPOINTS=[
+ "https://overpass.kumi.systems/api/interpreter",
+ "https://overpass-api.de/api/interpreter",
+ "https://overpass.nchc.org.tw/api/interpreter"
+];
+
+async function fetchOverpass(query){
+ let lastError=null;
+ for(const endpoint of OVERPASS_ENDPOINTS){
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),12000);
+  try{
+   const url=endpoint+"?data="+encodeURIComponent(query);
+   const r=await fetch(url,{method:"GET",headers:{"Accept":"application/json"},signal:controller.signal,cache:"no-store"});
+   clearTimeout(timer);
+   if(!r.ok)throw new Error("HTTP "+r.status);
+   const data=await r.json();
+   if(!data || !Array.isArray(data.elements))throw new Error("Réponse invalide");
+   return {data,endpoint};
+  }catch(err){
+   clearTimeout(timer);
+   lastError=err;
+  }
+ }
+ throw lastError||new Error("Aucun serveur disponible");
+}
+
 async function discoverNearbyHikes(pos){
- const el=document.getElementById("nearHikeList"),status=document.getElementById("nearHikeStatus");if(!el)return;
- status.textContent="Recherche de promenades réelles…";
- el.innerHTML='<div class="card"><p>🔎 Recherche des itinéraires pédestres publics autour de votre position…</p><p class="meta">Les durées et difficultés ne seront affichées que si elles sont réellement renseignées dans la source.</p></div>';
+ const el=document.getElementById("nearHikeList"),status=document.getElementById("nearHikeStatus");
+ if(!el)return;
+ status.textContent="Recherche des promenades…";
+ el.innerHTML='<div class="card"><p>🔎 Recherche d’itinéraires pédestres publics autour de votre position…</p><p class="meta">Plusieurs serveurs sont essayés automatiquement. Les durées et difficultés ne sont jamais inventées.</p></div>';
+
  const radius=Math.round(nearHikeRadius*1000);
- const q=`[out:json][timeout:20];(relation(around:${radius},${pos.lat},${pos.lng})["route"~"^(hiking|foot|walking)$"];);out center tags;`;
+ const q=`[out:json][timeout:18];(
+   relation(around:${radius},${pos.lat},${pos.lng})["route"~"^(hiking|foot|walking)$"];
+ );out center tags;`;
+
  try{
-  const r=await fetch("https://overpass-api.de/api/interpreter",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded;charset=UTF-8"},body:"data="+encodeURIComponent(q)});
-  if(!r.ok)throw new Error("service indisponible");
-  const data=await r.json();
+  const result=await fetchOverpass(q);
+  const data=result.data;
   const seen=new Set();
+
   const rows=(data.elements||[]).map(x=>{
-   const t=x.tags||{},lat=x.center?.lat, lng=x.center?.lon;
+   const t=x.tags||{},lat=x.center?.lat,lng=x.center?.lon;
    if(!lat||!lng)return null;
    const name=t.name||t.ref||"Itinéraire pédestre sans nom";
-   const key=(name+"|"+lat.toFixed(3)+"|"+lng.toFixed(3)).toLowerCase();if(seen.has(key))return null;seen.add(key);
+   const key=(name+"|"+lat.toFixed(3)+"|"+lng.toFixed(3)).toLowerCase();
+   if(seen.has(key))return null;
+   seen.add(key);
    return {name,lat,lng,t,nearKm:km(pos,{lat,lng})};
-  }).filter(Boolean).filter(x=>x.nearKm<=nearHikeRadius*1.15).sort((a,b)=>a.nearKm-b.nearKm).slice(0,20);
-  status.textContent=`${rows.length} itinéraire${rows.length>1?"s":""} public${rows.length>1?"s":""} trouvé${rows.length>1?"s":""}`;
-  if(!rows.length){el.innerHTML=`<div class="card"><p>Aucun itinéraire pédestre public référencé n’a été trouvé dans ${nearHikeRadius} km.</p><p class="meta">Cela ne signifie pas qu’il n’existe aucune promenade : seulement qu’aucun itinéraire exploitable n’est référencé par la source dans ce rayon.</p></div>`;return;}
-  el.innerHTML=rows.map(x=>`<div class="card nearbyHike"><div class="titleRow"><h2>🥾 ${escHtml(x.name)}</h2><span class="distanceBadge">${x.nearKm<1?Math.round(x.nearKm*1000)+" m":x.nearKm.toFixed(1)+" km"}</span></div><div class="meta">${osmDistance(x.t)} · ${osmDuration(x.t)} · ${osmDifficulty(x.t)}</div>${x.t.description?`<p>${escHtml(x.t.description)}</p>`:""}<div class="sourceTag">Source : OpenStreetMap · données contributives</div><div class="placeBtns"><button class="ignBtn" onclick='openIgnCoords(${JSON.stringify(x.name)},${x.lat},${x.lng})'>🗺️ Voir sur IGN</button><button class="primary" onclick="navigateTo('${x.lat},${x.lng}')">🚗 Aller à proximité</button></div></div>`).join("");
+  }).filter(Boolean)
+    .filter(x=>x.nearKm<=nearHikeRadius*1.15)
+    .sort((a,b)=>a.nearKm-b.nearKm)
+    .slice(0,25);
+
+  if(!rows.length){
+   status.textContent="Aucune promenade référencée dans ce rayon";
+   el.innerHTML=`<div class="card"><p>Aucun itinéraire pédestre public référencé n’a été trouvé dans un rayon de ${nearHikeRadius} km.</p><p class="meta">Cela ne veut pas dire qu’il n’existe aucune promenade à proximité : seulement qu’aucun itinéraire exploitable n’est référencé par la source dans ce rayon. Essaie 10 ou 20 km.</p></div>`;
+   return;
+  }
+
+  status.textContent=`${rows.length} promenade${rows.length>1?"s":""} trouvée${rows.length>1?"s":""}`;
+  el.innerHTML=rows.map(x=>`<div class="card nearbyHike">
+    <div class="titleRow"><h2>🥾 ${escHtml(x.name)}</h2><span class="distanceBadge">${x.nearKm<1?Math.round(x.nearKm*1000)+" m":x.nearKm.toFixed(1)+" km"}</span></div>
+    <div class="meta">${osmDistance(x.t)} · ${osmDuration(x.t)} · ${osmDifficulty(x.t)}</div>
+    ${x.t.description?`<p>${escHtml(x.t.description)}</p>`:""}
+    <div class="sourceTag">Source : OpenStreetMap · données contributives</div>
+    <div class="placeBtns">
+      <button class="ignBtn" onclick='openIgnCoords(${JSON.stringify(x.name)},${x.lat},${x.lng})'>🗺️ Voir sur IGN</button>
+      <button class="primary" onclick="navigateTo('${x.lat},${x.lng}')">🚗 Aller à proximité</button>
+    </div>
+  </div>`).join("");
  }catch(e){
-  status.textContent="Recherche indisponible";
-  el.innerHTML='<div class="card"><p>La recherche en ligne des promenades est momentanément indisponible.</p><p class="meta">Vos randonnées Guadeloupe enregistrées restent accessibles plus bas. Réessayez avec une connexion Internet.</p></div>';
+  status.textContent="Service de recherche indisponible";
+  el.innerHTML=`<div class="card">
+    <p>⚠️ Le GPS fonctionne, mais aucun des serveurs de recherche de promenades n’a répondu.</p>
+    <p class="meta">Ce n’est pas un problème de localisation. Réessaie dans quelques instants ; l’app bascule automatiquement entre plusieurs serveurs.</p>
+  </div>`;
  }
 }
 function setupNearbyHikes(){
@@ -233,6 +290,11 @@ const useGpsIgn=document.getElementById('ignUseGps'); if(useGpsIgn)useGpsIgn.onc
 
 const navPrefEl=document.getElementById("navPreference");
 if(navPrefEl){navPrefEl.value=S.navPreference||"ask";navPrefEl.onchange=()=>{S.navPreference=navPrefEl.value;save();openModal("Navigation enregistrée",navPrefEl.value==="google"?"Google Maps sera utilisé par défaut.":navPrefEl.value==="waze"?"Waze sera utilisé par défaut.":"L’application vous demandera à chaque trajet.")}}
+
+document.querySelectorAll("[data-app-version]").forEach(el=>el.textContent="v"+APP_VERSION);
+const currentVersionText=document.getElementById("currentVersionText");
+if(currentVersionText)currentVersionText.textContent="Vous utilisez la version "+APP_VERSION+".";
+
 setupNearbyHikes();
 if(S.pos){const nhs=document.getElementById("nearHikeStatus");if(nhs)nhs.textContent="Dernière position disponible · appuyez sur Rechercher pour actualiser";}
 renderHomes();renderToday();renderPlaces();renderHistory();renderHikes();
