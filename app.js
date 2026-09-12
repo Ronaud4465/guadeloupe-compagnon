@@ -1,4 +1,3 @@
-const APP_VERSION="0.4.6";
 
 const P=window.GUADELOUPE_PLACES;
 const defaults={today:[],done:[],history:[],hideDone:false,delay:0,notes:"",custom:[],homes:[
@@ -291,9 +290,6 @@ const useGpsIgn=document.getElementById('ignUseGps'); if(useGpsIgn)useGpsIgn.onc
 const navPrefEl=document.getElementById("navPreference");
 if(navPrefEl){navPrefEl.value=S.navPreference||"ask";navPrefEl.onchange=()=>{S.navPreference=navPrefEl.value;save();openModal("Navigation enregistrée",navPrefEl.value==="google"?"Google Maps sera utilisé par défaut.":navPrefEl.value==="waze"?"Waze sera utilisé par défaut.":"L’application vous demandera à chaque trajet.")}}
 
-document.querySelectorAll("[data-app-version]").forEach(el=>el.textContent="v"+APP_VERSION);
-const currentVersionText=document.getElementById("currentVersionText");
-if(currentVersionText)currentVersionText.textContent="Vous utilisez la version "+APP_VERSION+".";
 
 setupNearbyHikes();
 if(S.pos){const nhs=document.getElementById("nearHikeStatus");if(nhs)nhs.textContent="Dernière position disponible · appuyez sur Rechercher pour actualiser";}
@@ -348,6 +344,7 @@ async function makeTwoSidedCard(front,back){const a=await imageFromFile(front),b
 async function saveCardScan(){if(!cardFrontFile||!cardBackFile)return openModal("Scanner","Photographiez d’abord le recto et le verso.");try{const f=await makeTwoSidedCard(cardFrontFile,cardBackFile);await addVaultFile(f);resetCardScan();document.getElementById("cardScanBox").classList.add("hidden")}catch(e){openModal("Scanner","Impossible de créer le document : "+(e.message||e))}}
 
 window.addEventListener("load",()=>{
+ document.querySelectorAll("[data-app-version]").forEach(el=>el.textContent="v"+APP_VERSION);
  if(S.pos && Date.now()-S.pos.at<3600000) setGps(`Dernière position connue — précision ±${S.pos.accuracy||"?"} m`,true);
 });
 
@@ -554,7 +551,7 @@ window.addEventListener("load",()=>{
 });
 
 /* ===== V0.3.4 : IGN + journée intelligente + historique ===== */
-const APP_VERSION = "0.4.0";
+const APP_VERSION = "0.4.7";
 let swRegistration = null;
 let refreshingForUpdate = false;
 
