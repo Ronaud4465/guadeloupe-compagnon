@@ -88,3 +88,158 @@ if("serviceWorker"in navigator)navigator.serviceWorker.register("/sw.js");
 window.addEventListener("load",()=>{
  if(S.pos && Date.now()-S.pos.at<3600000) setGps(`Dernière position connue — précision ±${S.pos.accuracy||"?"} m`,true);
 });
+
+
+/* ===== Coffre voyage V0.3 : chiffrement local AES-GCM ===== */
+let vaultKey=null;
+const VAULT_DB="gw_vault_v1", VAULT_STORE="docs", VAULT_META="gw_vault_meta";
+
+function b64(buf){return btoa(String.fromCharCode(...new Uint8Array(buf)))}
+function unb64(s){return Uint8Array.from(atob(s),c=>c.charCodeAt(0)).buffer}
+function rand(n){let a=new Uint8Array(n);crypto.getRandomValues(a);return a}
+
+function openVaultDB(){
+ return new Promise((resolve,reject)=>{
+  const r=indexedDB.open(VAULT_DB,1);
+  r.onupgradeneeded=()=>r.result.createObjectStore(VAULT_STORE,{keyPath:"id"});
+  r.onsuccess=()=>resolve(r.result); r.onerror=()=>reject(r.error);
+ });
+}
+async function deriveVaultKey(pin,salt){
+ const material=await crypto.subtle.importKey("raw",new TextEncoder().encode(pin),"PBKDF2",false,["deriveKey"]);
+ return crypto.subtle.deriveKey(
+  {name:"PBKDF2",salt,iterations:210000,hash:"SHA-256"},
+  material,{name:"AES-GCM",length:256},false,["encrypt","decrypt"]
+ );
+}
+async function encJSON(obj,key){
+ const iv=rand(12), plain=new TextEncoder().encode(JSON.stringify(obj));
+ const cipher=await crypto.subtle.encrypt({name:"AES-GCM",iv},key,plain);
+ return {iv:b64(iv),data:b64(cipher)};
+}
+async function decJSON(payload,key){
+ const plain=await crypto.subtle.decrypt({name:"AES-GCM",iv:new Uint8Array(unb64(payload.iv))},key,unb64(payload.data));
+ return JSON.parse(new TextDecoder().decode(plain));
+}
+async function encryptBytes(bytes,key){
+ const iv=rand(12), cipher=await crypto.subtle.encrypt({name:"AES-GCM",iv},key,bytes);
+ return {iv:b64(iv),data:cipher};
+}
+async function decryptBytes(payload,key){
+ return crypto.subtle.decrypt({name:"AES-GCM",iv:new Uint8Array(unb64(payload.iv))},key,payload.data);
+}
+
+async function createOrUnlockVault(){
+ const pin=document.getElementById("vaultPin").value.trim();
+ if(pin.length<4){openModal("Coffre","Choisissez un code d’au moins 4 chiffres.");return}
+ let meta=JSON.parse(localStorage.getItem(VAULT_META)||"null");
+ try{
+  if(!meta){
+   const salt=rand(16);
+   const key=await deriveVaultKey(pin,salt);
+   const check=await encJSON({ok:"GUAD-V03"},key);
+   meta={salt:b64(salt),check};
+   localStorage.setItem(VAULT_META,JSON.stringify(meta));
+   vaultKey=key;
+  }else{
+   const key=await deriveVaultKey(pin,new Uint8Array(unb64(meta.salt)));
+   const test=await decJSON(meta.check,key);
+   if(test.ok!=="GUAD-V03")throw new Error("bad pin");
+   vaultKey=key;
+  }
+  document.getElementById("vaultPin").value="";
+  document.getElementById("vaultLocked").classList.add("hidden");
+  document.getElementById("vaultOpen").classList.remove("hidden");
+  document.getElementById("vaultManager").classList.remove("hidden");
+  await renderVaultDocs();
+ }catch(e){
+  vaultKey=null;
+  openModal("Code incorrect","Impossible d’ouvrir le coffre avec ce code.");
+ }
+}
+function lockVault(){
+ vaultKey=null;
+ document.getElementById("vaultLocked").classList.remove("hidden");
+ document.getElementById("vaultOpen").classList.add("hidden");
+ document.getElementById("vaultManager").classList.add("hidden");
+ document.getElementById("docsList").innerHTML='<p class="meta">Coffre verrouillé.</p>';
+}
+async function addVaultFile(file){
+ if(!vaultKey)return openModal("Coffre","Déverrouillez d’abord le coffre.");
+ if(!file)return;
+ if(file.size>15*1024*1024)return openModal("Fichier trop volumineux","Limite actuelle : 15 Mo par document.");
+ try{
+  const bytes=await file.arrayBuffer();
+  const enc=await encryptBytes(bytes,vaultKey);
+  const meta=await encJSON({
+    name:file.name||("scan-"+new Date().toISOString().slice(0,10)+".jpg"),
+    type:file.type||"application/octet-stream",
+    category:document.getElementById("docCategory").value,
+    created:new Date().toISOString()
+  },vaultKey);
+  const db=await openVaultDB();
+  await new Promise((resolve,reject)=>{
+    const tx=db.transaction(VAULT_STORE,"readwrite");
+    tx.objectStore(VAULT_STORE).put({id:"d"+Date.now()+Math.random(),meta,iv:enc.iv,data:enc.data});
+    tx.oncomplete=resolve; tx.onerror=()=>reject(tx.error);
+  });
+  await renderVaultDocs();
+  openModal("Document ajouté","Le document a été chiffré et enregistré uniquement sur cet appareil.");
+ }catch(e){openModal("Erreur","Impossible d’enregistrer ce document : "+(e.message||e))}
+}
+async function getAllVaultRows(){
+ const db=await openVaultDB();
+ return new Promise((resolve,reject)=>{
+  const tx=db.transaction(VAULT_STORE,"readonly"),r=tx.objectStore(VAULT_STORE).getAll();
+  r.onsuccess=()=>resolve(r.result||[]);r.onerror=()=>reject(r.error);
+ });
+}
+async function renderVaultDocs(){
+ if(!vaultKey)return;
+ const box=document.getElementById("docsList");
+ const rows=await getAllVaultRows();
+ if(!rows.length){box.innerHTML='<p class="meta">Aucun document dans le coffre.</p>';return}
+ box.innerHTML="";
+ for(const row of rows.sort((a,b)=>String(b.id).localeCompare(String(a.id)))){
+  let m;
+  try{m=await decJSON(row.meta,vaultKey)}catch{continue}
+  const div=document.createElement("div"); div.className="docItem";
+  div.innerHTML=`<h3>${m.category}</h3><div class="meta">${m.name}<br>${new Date(m.created).toLocaleString("fr-BE")}</div>
+  <div class="docActions"><button class="primary">Ouvrir</button><button class="ghost">Supprimer</button></div>`;
+  const [openBtn,delBtn]=div.querySelectorAll("button");
+  openBtn.onclick=()=>openVaultDoc(row,m,div);
+  delBtn.onclick=()=>deleteVaultDoc(row.id);
+  box.appendChild(div);
+ }
+}
+async function openVaultDoc(row,m,div){
+ try{
+  const bytes=await decryptBytes({iv:row.iv,data:row.data},vaultKey);
+  const blob=new Blob([bytes],{type:m.type});
+  const url=URL.createObjectURL(blob);
+  let old=div.querySelector(".previewWrap"); if(old){URL.revokeObjectURL(old.dataset.url||"");old.remove()}
+  const w=document.createElement("div");w.className="previewWrap";w.dataset.url=url;
+  if(m.type.startsWith("image/"))w.innerHTML=`<img alt="Document">`;
+  else if(m.type==="application/pdf")w.innerHTML=`<iframe title="PDF"></iframe>`;
+  else w.innerHTML=`<a class="btn primary" href="${url}" target="_blank">Ouvrir le fichier</a>`;
+  div.appendChild(w);
+  const el=w.querySelector("img,iframe"); if(el)el.src=url;
+ }catch(e){openModal("Erreur","Impossible de déchiffrer le document.")}
+}
+async function deleteVaultDoc(id){
+ if(!confirm("Supprimer définitivement ce document de cet appareil ?"))return;
+ const db=await openVaultDB();
+ await new Promise((resolve,reject)=>{
+  const tx=db.transaction(VAULT_STORE,"readwrite");tx.objectStore(VAULT_STORE).delete(id);
+  tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);
+ });
+ renderVaultDocs();
+}
+
+window.addEventListener("load",()=>{
+ const u=document.getElementById("unlockVault"); if(u)u.onclick=createOrUnlockVault;
+ const l=document.getElementById("lockVault"); if(l)l.onclick=lockVault;
+ const r=document.getElementById("refreshDocs"); if(r)r.onclick=renderVaultDocs;
+ const c=document.getElementById("cameraInput"); if(c)c.onchange=e=>{addVaultFile(e.target.files[0]);e.target.value=""};
+ const f=document.getElementById("fileInput"); if(f)f.onchange=e=>{addVaultFile(e.target.files[0]);e.target.value=""};
+});

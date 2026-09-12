@@ -36,10 +36,57 @@
 <div class="card"><h2>⭐ Recherche libre autour de moi</h2><input id="nearQuery" placeholder="Ex. marché nocturne, bokit, artisan…"><button class="primary wide" id="nearSearch">Chercher à proximité</button></div>
 </section>
 
+
 <section id="docs" class="tab">
-<div class="sectionHead"><h1>Billets & informations</h1><p>Conservez les références utiles du voyage.</p></div>
-<div class="card"><h2>📝 Carnet</h2><textarea id="notes" rows="12" placeholder="Réservations, billets, horaires, restaurants, numéros utiles…"></textarea><button class="primary wide" id="saveNotes">Enregistrer</button></div>
-<div class="card"><h2>🎫 Documents</h2><p>Pour la V0.2, utilisez le carnet pour les références. L’import de billets/QR sera ajouté après validation de cette version en ligne.</p></div>
+<div class="sectionHead"><h1>Billets & coffre voyage</h1><p>Billets, QR codes et copies de documents, conservés localement sur cet appareil.</p></div>
+
+<div class="card vaultIntro">
+  <h2>🔐 Coffre voyage</h2>
+  <p><b>Les documents ne sont pas envoyés sur GitHub ni sur Vercel.</b> Ils sont chiffrés sur cet iPhone dans le stockage du navigateur.</p>
+  <div id="vaultLocked">
+    <input id="vaultPin" type="password" inputmode="numeric" autocomplete="off" placeholder="Code du coffre (4 chiffres minimum)">
+    <button class="primary wide" id="unlockVault">Ouvrir / créer le coffre</button>
+    <p class="meta">⚠️ Si vous oubliez le code, nous ne pouvons pas récupérer les documents. Gardez aussi les originaux avec vous.</p>
+  </div>
+  <div id="vaultOpen" class="hidden">
+    <div class="vaultState">🟢 Coffre déverrouillé sur cet appareil</div>
+    <button class="ghost wide" id="lockVault">Verrouiller</button>
+  </div>
+</div>
+
+<div id="vaultManager" class="hidden">
+  <div class="card">
+    <h2>➕ Ajouter un document</h2>
+    <select id="docCategory">
+      <option>✈️ Billet d’avion</option>
+      <option>🪪 Carte d’identité</option>
+      <option>🚗 Permis de conduire</option>
+      <option>🏠 Location / logement</option>
+      <option>⛴️ Ferry / excursion</option>
+      <option>🎫 Réservation / billet</option>
+      <option>🧾 Assurance / assistance</option>
+      <option>📄 Autre</option>
+    </select>
+    <label class="scanBtn">📷 Scanner / photographier
+      <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden>
+    </label>
+    <label class="scanBtn secondaryScan">📁 Choisir photo ou PDF
+      <input id="fileInput" type="file" accept="image/*,application/pdf" hidden>
+    </label>
+    <p class="meta">Sur iPhone, « Scanner / photographier » ouvre directement l’appareil photo.</p>
+  </div>
+
+  <div class="card">
+    <div class="titleRow"><h2>Mes documents</h2><button class="ghost" id="refreshDocs">Actualiser</button></div>
+    <div id="docsList"><p class="meta">Aucun document.</p></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>📝 Carnet</h2>
+  <textarea id="notes" rows="10" placeholder="Réservations, horaires, restaurants, numéros utiles…"></textarea>
+  <button class="primary wide" id="saveNotes">Enregistrer</button>
+</div>
 </section>
 
 <section id="settings" class="tab">

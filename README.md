@@ -21,3 +21,12 @@ PWA statique prête pour GitHub + Vercel.
 
 ## V0.2.1
 Diagnostic GPS détaillé pour Safari/iPhone, état GPS visible, délai 20 s et précision non forcée au premier test.
+
+## V0.3 — Coffre voyage
+- Ajout d'un coffre local chiffré AES-GCM.
+- Code utilisateur dérivé par PBKDF2 (210 000 itérations, SHA-256).
+- Import appareil photo iPhone, photos et PDF.
+- Données conservées dans IndexedDB, métadonnées et contenu chiffrés.
+- Rien n'est envoyé vers GitHub/Vercel.
+- Limite actuelle : 15 Mo par document.
+- Attention : effacer les données Safari ou perdre l'appareil peut supprimer le coffre. Garder les originaux.
