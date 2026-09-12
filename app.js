@@ -107,6 +107,55 @@ const HIKES={
  "ecrevisses":{difficulty:"Très facile",duration:"30 min A/R",distance:"415 m A/R",note:"Itinéraire aménagé depuis le parking ; données Rando Guadeloupe.",source:"Rando Guadeloupe"}
 };
 let ignMap=null,ignMarker=null,gpsMarker=null;
+let liveWatchId=null,currentHikeLines=null;
+function setLiveTrackButton(active){
+ const btn=document.getElementById('ignLiveTrack'); if(!btn)return;
+ btn.textContent=active?"⏹️ Arrêter le suivi en direct":"🎯 Suivre ma position en direct";
+ btn.classList.toggle('active',active);
+}
+function distanceToHikeLines(pos){
+ if(!currentHikeLines)return null;
+ let best=Infinity;
+ for(const line of currentHikeLines){
+   for(let i=1;i<line.length;i++)best=Math.min(best,pointToSegmentMeters(pos,line[i-1],line[i]));
+ }
+ return Number.isFinite(best)?best:null;
+}
+function updateLiveMarker(pos){
+ const status=document.getElementById('ignLiveStatus');
+ if(!ignMap){if(status)status.textContent=`🎯 Suivi actif · précision ±${pos.accuracy??"?"} m`;return;}
+ if(gpsMarker)ignMap.removeLayer(gpsMarker);
+ gpsMarker=L.circleMarker([pos.lat,pos.lng],{radius:8,color:'#0a675e',weight:3,fillColor:'#0a675e',fillOpacity:.85}).addTo(ignMap).bindPopup('Votre position GPS');
+ if(!ignMap.getBounds().contains([pos.lat,pos.lng]))ignMap.panTo([pos.lat,pos.lng]);
+ if(status){
+  const toTrace=distanceToHikeLines(pos);
+  const extra=toTrace!=null?` · à ${toTrace<1000?Math.round(toTrace)+" m":(toTrace/1000).toFixed(1)+" km"} du tracé`:"";
+  status.textContent=`🎯 Suivi actif · précision ±${pos.accuracy??"?"} m${extra}`;
+ }
+}
+function startLiveTracking(){
+ const status=document.getElementById('ignLiveStatus');
+ if(!window.isSecureContext){if(status)status.textContent="⚠️ Le suivi en direct exige une connexion HTTPS sécurisée.";return;}
+ if(!("geolocation" in navigator)){if(status)status.textContent="⚠️ La géolocalisation n’est pas disponible dans ce navigateur.";return;}
+ if(status)status.textContent="🎯 Démarrage du suivi…";
+ liveWatchId=navigator.geolocation.watchPosition(
+   p=>{
+    const pos={lat:p.coords.latitude,lng:p.coords.longitude,accuracy:Math.round(p.coords.accuracy)};
+    S.pos={...pos,at:Date.now()};save();
+    updateLiveMarker(pos);
+   },
+   e=>{if(status)status.textContent="⚠️ "+gpsMessage(e);},
+   {enableHighAccuracy:true,maximumAge:2000,timeout:15000}
+ );
+ setLiveTrackButton(true);
+}
+function stopLiveTracking(){
+ if(liveWatchId!=null){navigator.geolocation.clearWatch(liveWatchId);liveWatchId=null;}
+ setLiveTrackButton(false);
+ const status=document.getElementById('ignLiveStatus'); if(status)status.textContent="";
+}
+const ignLiveTrackBtn=document.getElementById('ignLiveTrack');
+if(ignLiveTrackBtn)ignLiveTrackBtn.onclick=()=>{liveWatchId!=null?stopLiveTracking():startLiveTracking();};
 let nearHikeRadius=10;
 function approxDriveMinutes(kmVal){return Math.max(3,Math.round((kmVal*1.22)/38*60));}
 function renderNearbyHikes(pos){
@@ -156,6 +205,98 @@ async function fetchOverpass(query){
  }
 }
 
+
+// Rôles OSM acceptés pour un itinéraire de rando/promenade (voir wiki OSM "Roles for
+// recreational route relations"). On ignore les autres rôles (ex. "boundary", "label",
+// "poi"...) qui ne représentent pas un chemin à suivre à pied, pour ne pas fausser la
+// distance ni le tracé.
+const WALKABLE_ROLES=new Set(["","main","alternative","approach","excursion","connection"]);
+function isWalkableMember(m){return !m.role || WALKABLE_ROLES.has(m.role);}
+function routeGeometryPoints(el){
+ const pts=[];
+ if(Array.isArray(el.geometry)){
+   for(const p of el.geometry){
+     if(Number.isFinite(p.lat)&&Number.isFinite(p.lon))pts.push({lat:p.lat,lng:p.lon});
+   }
+ }
+ if(Array.isArray(el.members)){
+   for(const m of el.members){
+     if(!isWalkableMember(m))continue;
+     if(Array.isArray(m.geometry)){
+       for(const p of m.geometry){
+         if(Number.isFinite(p.lat)&&Number.isFinite(p.lon))pts.push({lat:p.lat,lng:p.lon});
+       }
+     }
+   }
+ }
+ return pts;
+}
+function pointToSegmentMeters(p,a,b){
+ // Equirectangular projection is accurate enough for local distance filtering.
+ const R=6371000, rad=Math.PI/180;
+ const lat0=p.lat*rad;
+ const ax=(a.lng-p.lng)*rad*Math.cos(lat0)*R;
+ const ay=(a.lat-p.lat)*rad*R;
+ const bx=(b.lng-p.lng)*rad*Math.cos(lat0)*R;
+ const by=(b.lat-p.lat)*rad*R;
+ const dx=bx-ax,dy=by-ay;
+ const den=dx*dx+dy*dy;
+ let t=den?-(ax*dx+ay*dy)/den:0;
+ t=Math.max(0,Math.min(1,t));
+ const x=ax+t*dx,y=ay+t*dy;
+ return Math.sqrt(x*x+y*y);
+}
+function routeGeometryGroups(el){
+ // Retourne les segments (suites de points {lat,lng}) réellement marchables d'une relation,
+ // en ignorant les membres dont le rôle n'est pas un rôle de chemin (voir isWalkableMember).
+ const groups=[];
+ if(Array.isArray(el.geometry)&&el.geometry.length>1){
+   groups.push(el.geometry.filter(p=>Number.isFinite(p.lat)&&Number.isFinite(p.lon)).map(p=>({lat:p.lat,lng:p.lon})));
+ }
+ if(Array.isArray(el.members)){
+   for(const m of el.members){
+     if(!isWalkableMember(m))continue;
+     if(Array.isArray(m.geometry)&&m.geometry.length>1){
+       groups.push(m.geometry.filter(p=>Number.isFinite(p.lat)&&Number.isFinite(p.lon)).map(p=>({lat:p.lat,lng:p.lon})));
+     }
+   }
+ }
+ return groups.filter(g=>g.length>1);
+}
+function nearestRouteMeters(pos,el){
+ let best=Infinity;
+ const groups=[];
+ if(Array.isArray(el.geometry)&&el.geometry.length>1)groups.push(el.geometry);
+ if(Array.isArray(el.members)){
+   for(const m of el.members){
+     if(!isWalkableMember(m))continue;
+     if(Array.isArray(m.geometry)&&m.geometry.length>1)groups.push(m.geometry);
+   }
+ }
+ for(const g of groups){
+   for(let i=1;i<g.length;i++){
+     const a={lat:g[i-1].lat,lng:g[i-1].lon}, b={lat:g[i].lat,lng:g[i].lon};
+     if(!Number.isFinite(a.lat)||!Number.isFinite(a.lng)||!Number.isFinite(b.lat)||!Number.isFinite(b.lng))continue;
+     best=Math.min(best,pointToSegmentMeters(pos,a,b));
+   }
+ }
+ if(Number.isFinite(best))return best;
+ // fallback only if no geometry
+ if(el.center?.lat&&el.center?.lon)return haversineMeters(pos,{lat:el.center.lat,lng:el.center.lon});
+ return Infinity;
+}
+function representativeRoutePoint(pos,el){
+ let best=null,bestM=Infinity;
+ const pts=routeGeometryPoints(el);
+ for(const p of pts){
+   const m=haversineMeters(pos,p);
+   if(m<bestM){bestM=m;best=p;}
+ }
+ if(best)return best;
+ if(el.center?.lat&&el.center?.lon)return {lat:el.center.lat,lng:el.center.lon};
+ return null;
+}
+
 async function discoverNearbyHikes(pos){
  const el=document.getElementById("nearHikeList"),status=document.getElementById("nearHikeStatus");
  if(pos.accuracy && pos.accuracy>5000){
@@ -168,9 +309,14 @@ async function discoverNearbyHikes(pos){
  el.innerHTML='<div class="card"><p>🔎 Recherche d’itinéraires pédestres publics autour de votre position…</p><p class="meta">Plusieurs serveurs sont essayés automatiquement. Les durées et difficultés ne sont jamais inventées.</p></div>';
 
  const radius=Math.round(nearHikeRadius*1000);
- const q=`[out:json][timeout:18];(
-   relation(around:${radius},${pos.lat},${pos.lng})["route"~"^(hiking|foot|walking)$"];
- );out center tags;`;
+ // On exclut les super-relations "réseau" (type=network / superroute) : ce sont des
+ // regroupements de TOUT un territoire (ex. réseau points-noeuds régional), pas une
+ // promenade précise. Sans ce filtre, une portion lointaine du réseau peut faire
+ // apparaître le nom du réseau entier comme "proche" alors que la vraie promenade
+ // marchable ne l'est pas.
+ const q=`[out:json][timeout:22];(
+   relation(around:${radius},${pos.lat},${pos.lng})["route"~"^(hiking|foot|walking)$"]["type"!~"^(network|superroute)$"];
+ );out geom tags;`;
 
  try{
   const result=await fetchOverpass(q);
@@ -178,15 +324,24 @@ async function discoverNearbyHikes(pos){
   const seen=new Set();
 
   const rows=(data.elements||[]).map(x=>{
-   const t=x.tags||{},lat=x.center?.lat,lng=x.center?.lon;
-   if(!lat||!lng)return null;
+   const t=x.tags||{};
+   const rp=representativeRoutePoint(pos,x);
+   if(!rp)return null;
+   const routeMeters=nearestRouteMeters(pos,x);
+   const nearKm=routeMeters/1000;
    const name=t.name||t.ref||"Itinéraire pédestre sans nom";
-   const key=(name+"|"+lat.toFixed(3)+"|"+lng.toFixed(3)).toLowerCase();
+   const key=(x.id+"|"+name).toLowerCase();
    if(seen.has(key))return null;
    seen.add(key);
-   return {id:x.id,name,lat,lng,t,nearKm:km(pos,{lat,lng})};
+   // Longueur totale du tracé référencé (tous segments walkable confondus) : si c'est très
+   // long, ce n'est pas "une promenade" ponctuelle mais un itinéraire de grande randonnée
+   // ou un réseau étendu — on le signale au lieu de le faire passer pour une petite balade.
+   const totalMeters=sumLineMeters(routeGeometryGroups(x));
+   const totalKm=totalMeters/1000;
+   const extended=totalKm>25;
+   return {id:x.id,name,lat:rp.lat,lng:rp.lng,t,nearKm,totalKm,extended};
   }).filter(Boolean)
-    .filter(x=>x.nearKm<=nearHikeRadius*1.15)
+    .filter(x=>x.nearKm<=nearHikeRadius)
     .sort((a,b)=>a.nearKm-b.nearKm)
     .slice(0,25);
 
@@ -198,8 +353,9 @@ async function discoverNearbyHikes(pos){
 
   status.textContent=`${rows.length} promenade${rows.length>1?"s":""} trouvée${rows.length>1?"s":""}`;
   el.innerHTML=rows.map(x=>`<div class="card nearbyHike">
-    <div class="titleRow"><h2>🥾 ${escHtml(x.name)}</h2><span class="distanceBadge">${x.nearKm<1?Math.round(x.nearKm*1000)+" m":x.nearKm.toFixed(1)+" km"}</span></div>
+    <div class="titleRow"><h2>🥾 ${escHtml(x.name)}</h2><span class="distanceBadge">à ${x.nearKm<1?Math.round(x.nearKm*1000)+" m":x.nearKm.toFixed(1)+" km"} du tracé</span></div>
     <div class="meta">${osmDistance(x.t)} · ${osmDuration(x.t)} · ${osmDifficulty(x.t)}</div>
+    ${x.extended?`<p class="meta">⚠️ Itinéraire étendu (≈ ${Math.round(x.totalKm)} km au total référencés) : seul un point du tracé est à ${x.nearKm.toFixed(1)} km, le reste peut être bien plus loin. Ouvrez « PARCOURS + TEMPS » pour voir la portion réelle proche de vous.</p>`:""}
     ${x.t.description?`<p>${escHtml(x.t.description)}</p>`:""}
     <div class="sourceTag">Source : OpenStreetMap · données contributives</div>
     <div class="placeBtns">
@@ -274,17 +430,23 @@ function formatRouteDistance(m){
  return m<1000?`${Math.round(m)} m`:`${(m/1000).toFixed(m<10000?1:0)} km`;
 }
 function collectRelationLines(data){
- const lines=[];
+ const lines=[],seen=new Set();
+ const pushGeom=(geom)=>{
+   if(!Array.isArray(geom) || geom.length<2)return;
+   const clean=geom.filter(p=>Number.isFinite(p.lat) && Number.isFinite(p.lon))
+                   .map(p=>({lat:p.lat,lng:p.lon}));
+   if(clean.length<2)return;
+   const a=clean[0],b=clean[clean.length-1];
+   const key=`${a.lat.toFixed(6)},${a.lng.toFixed(6)}|${b.lat.toFixed(6)},${b.lng.toFixed(6)}|${clean.length}`;
+   if(seen.has(key))return;
+   seen.add(key);
+   lines.push(clean);
+ };
  for(const el of (data.elements||[])){
-  if(el.type==="relation" && Array.isArray(el.members)){
-   for(const m of el.members){
-    if(Array.isArray(m.geometry) && m.geometry.length>1){
-     lines.push(m.geometry.map(p=>({lat:p.lat,lng:p.lon})));
-    }
+   if(el.type==="relation" && Array.isArray(el.members)){
+     for(const m of el.members)pushGeom(m.geometry);
    }
-  }else if(Array.isArray(el.geometry) && el.geometry.length>1){
-   lines.push(el.geometry.map(p=>({lat:p.lat,lng:p.lon})));
-  }
+   pushGeom(el.geometry);
  }
  return lines;
 }
@@ -295,7 +457,75 @@ function sumLineMeters(lines){
  }
  return total;
 }
+function samplePolylinePoints(lines,maxTotal){
+ // Renvoie, pour chaque ligne, une liste d'indices échantillonnés (toujours le premier
+ // et le dernier point conservés) de façon à ne pas dépasser maxTotal points au total,
+ // tout en gardant l'ordre le long du tracé pour un calcul de dénivelé cohérent.
+ const totalPts=lines.reduce((s,l)=>s+l.length,0);
+ const ratio=totalPts>maxTotal?maxTotal/totalPts:1;
+ return lines.map(line=>{
+   if(line.length<=2||ratio>=1)return line;
+   const step=Math.max(1,Math.round(1/ratio));
+   const out=[line[0]];
+   for(let i=step;i<line.length-1;i+=step)out.push(line[i]);
+   out.push(line[line.length-1]);
+   return out;
+ });
+}
+async function fetchElevations(points){
+ const r=await fetch("/api/elevation",{
+   method:"POST",
+   headers:{"Content-Type":"application/json"},
+   body:JSON.stringify({points}),
+   signal:AbortSignal.timeout(20000)
+ });
+ if(!r.ok){
+   let msg="HTTP "+r.status;
+   try{const e=await r.json();if(e?.error)msg=e.error;}catch(_){}
+   throw new Error(msg);
+ }
+ const data=await r.json();
+ if(!Array.isArray(data.elevations))throw new Error("Réponse d'altitude invalide");
+ return data.elevations;
+}
+async function estimateHikeTime(lines,distanceMeters){
+ // Estimation indicative du temps de marche, tenant compte du dénivelé (D+/D-) : une
+ // portion en montée ou en descente ne se parcourt pas au même rythme qu'un terrain plat.
+ // Ce n'est jamais présenté comme une donnée officielle — seulement un ordre de grandeur.
+ const sampled=samplePolylinePoints(lines,220);
+ const flat=sampled.flat();
+ if(flat.length<2)return null;
+ const elevations=await fetchElevations(flat);
+ let ascent=0,descent=0,cursor=0,acc=0,prevEl=null;
+ const NOISE_M=3; // seuil pour lisser le bruit du modèle de terrain
+ for(const line of sampled){
+   for(let i=0;i<line.length;i++){
+     const e=elevations[cursor++];
+     if(typeof e!=="number"){continue;}
+     if(prevEl!=null){
+       acc+=e-prevEl;
+       if(Math.abs(acc)>=NOISE_M){
+         if(acc>0)ascent+=acc; else descent+=-acc;
+         acc=0;
+       }
+     }
+     prevEl=e;
+   }
+   prevEl=null; acc=0; // rupture entre segments non contigus
+ }
+ const distanceKm=distanceMeters/1000;
+ // Règle indicative : 4 km/h à plat, +1h par 500 m de montée, +1h par 800 m de descente.
+ const hours=distanceKm/4 + ascent/500 + descent/800;
+ const minutes=Math.max(5,Math.round(hours*60));
+ return {ascentM:Math.round(ascent),descentM:Math.round(descent),minutes};
+}
+function formatMinutes(min){
+ const h=Math.floor(min/60),m=min%60;
+ return h?`${h} h${m?" "+m+" min":""}`:`${m} min`;
+}
 window.openOsmHikeRoute=async function(relId,name,lat,lng,durationTag,distanceTag){
+ stopLiveTracking();
+ currentHikeLines=null;
  document.getElementById('ignMapTitle').textContent=`🥾 ${name}`;
  document.getElementById('ignMapModal').classList.remove('hidden');
  const fallback=document.getElementById('ignMapFallback');
@@ -303,17 +533,31 @@ window.openOsmHikeRoute=async function(relId,name,lat,lng,durationTag,distanceTa
  fallback.innerHTML='🔎 Chargement du tracé de la promenade…';
 
  try{
-  const q=`[out:json][timeout:20];relation(${relId});out geom;`;
+  const q=`[out:json][timeout:25];relation(${relId})->.r;(.r;way(r););out geom;`;
   const result=await fetchOverpass(q);
   const lines=collectRelationLines(result.data);
   if(!lines.length)throw new Error("Tracé non disponible");
+  currentHikeLines=lines;
 
   const computedMeters=sumLineMeters(lines);
   const distanceText=distanceTag ? distanceTag : formatRouteDistance(computedMeters);
   const distanceLabel=distanceTag ? "Distance source" : "Distance calculée sur le tracé OSM";
   const timeText=durationTag ? durationTag : "non renseigné";
 
-  fallback.innerHTML=`<b>${escHtml(name)}</b><br>${distanceLabel} : <b>${escHtml(distanceText)}</b> · Temps : <b>${escHtml(timeText)}</b><br><span class="meta">${durationTag?"Temps fourni par OpenStreetMap.":"Aucun temps fiable n’est fourni par la source : l’app ne l’invente pas."}</span>`;
+  fallback.innerHTML=`<b>${escHtml(name)}</b><br>${distanceLabel} : <b>${escHtml(distanceText)}</b> · Temps : <b>${escHtml(timeText)}</b><br><span class="meta">Tracé chargé : ${lines.length} segment${lines.length>1?"s":""}. ${durationTag?"Temps fourni par OpenStreetMap.":"Aucun temps fiable n’est fourni par la source : l’app ne l’invente pas."}</span><br><span class="meta" id="hikeElevInfo">⛰️ Calcul du dénivelé…</span>`;
+
+  // Dénivelé + estimation de temps tenant compte de la pente : en best-effort, sans jamais
+  // remplacer une durée officielle si elle existe, seulement pour compléter l'info.
+  estimateHikeTime(lines,computedMeters).then(est=>{
+   const elevEl=document.getElementById("hikeElevInfo");
+   if(!elevEl)return;
+   if(!est){elevEl.textContent="⛰️ Dénivelé indisponible pour ce tracé.";return;}
+   const estLine=`⛰️ D+ ${est.ascentM} m · D- ${est.descentM} m · Estimation de marche : ${formatMinutes(est.minutes)}${durationTag?" (temps officiel ci-dessus, ceci est indicatif)":" — indicatif, non officiel"}`;
+   elevEl.textContent=estLine;
+  }).catch(()=>{
+   const elevEl=document.getElementById("hikeElevInfo");
+   if(elevEl)elevEl.textContent="⛰️ Service de dénivelé injoignable pour l’instant.";
+  });
 
   setTimeout(()=>{
    if(!window.L)return;
@@ -323,11 +567,18 @@ window.openOsmHikeRoute=async function(relId,name,lat,lng,durationTag,distanceTa
 
    const latlngs=lines.map(line=>line.map(p=>[p.lat,p.lng]));
    const routeLayer=L.featureGroup();
-   latlngs.forEach(line=>L.polyline(line,{weight:5,opacity:.9}).addTo(routeLayer));
+   latlngs.forEach(line=>{
+     L.polyline(line,{weight:9,opacity:.95,color:'#ffffff'}).addTo(routeLayer);
+     L.polyline(line,{weight:5,opacity:1,color:'#d40000'}).addTo(routeLayer);
+   });
    routeLayer.addTo(ignMap);
 
    const first=lines[0][0];
-   L.marker([first.lat,first.lng]).addTo(ignMap).bindPopup('Départ du parcours');
+   const last=lines[lines.length-1][lines[lines.length-1].length-1];
+   L.circleMarker([first.lat,first.lng],{radius:8,color:'#111',fillColor:'#fff',fillOpacity:1,weight:3})
+     .addTo(ignMap).bindPopup('Départ du parcours');
+   L.circleMarker([last.lat,last.lng],{radius:7,color:'#111',fillColor:'#111',fillOpacity:1,weight:2})
+     .addTo(ignMap).bindPopup('Fin / dernier point du parcours');
    if(S.pos) L.circleMarker([S.pos.lat,S.pos.lng],{radius:8}).addTo(ignMap).bindPopup('Votre position GPS');
 
    const bounds=routeLayer.getBounds();
@@ -340,6 +591,8 @@ window.openOsmHikeRoute=async function(relId,name,lat,lng,durationTag,distanceTa
  }
 };
 window.openIgnCoords=function(name,lat,lng){
+ stopLiveTracking();
+ currentHikeLines=null;
  document.getElementById('ignMapTitle').textContent=`🗺️ IGN · ${name}`;
  document.getElementById('ignMapModal').classList.remove('hidden');
  setTimeout(()=>{
@@ -351,6 +604,8 @@ window.openIgnCoords=function(name,lat,lng){
  },120);
 };
 window.openIgnMap=function(id){
+ stopLiveTracking();
+ currentHikeLines=null;
  const p=all().find(x=>x.id===id); if(!p||!p.lat)return;
  document.getElementById('ignMapTitle').textContent=`🗺️ IGN · ${p.name}`;
  document.getElementById('ignMapModal').classList.remove('hidden');
@@ -364,7 +619,7 @@ window.openIgnMap=function(id){
   stabilizeLeafletMap(ignMap);
  },80);
 };
-function closeIgn(){document.getElementById('ignMapModal').classList.add('hidden');if(ignMap){ignMap.remove();ignMap=null}}
+function closeIgn(){stopLiveTracking();currentHikeLines=null;document.getElementById('ignMapModal').classList.add('hidden');if(ignMap){ignMap.remove();ignMap=null}}
 window.closeIgn=closeIgn;
 function gpsMessage(e){
  if(!e)return "Erreur GPS inconnue.";
@@ -669,7 +924,7 @@ window.addEventListener("load",()=>{
 });
 
 /* ===== V0.3.4 : IGN + journée intelligente + historique ===== */
-const APP_VERSION = "0.5.1";
+const APP_VERSION = "0.5.5";
 let swRegistration = null;
 let refreshingForUpdate = false;
 
