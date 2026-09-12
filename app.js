@@ -1,6 +1,6 @@
 
 const P=window.GUADELOUPE_PLACES;
-const defaults={today:[],delay:0,notes:"",custom:[],homes:[
+const defaults={today:[],done:[],history:[],hideDone:false,delay:0,notes:"",custom:[],homes:[
 {name:"Sainte-Anne",from:"2027-01-01",to:"2027-01-08",lat:16.2264,lng:-61.3850},
 {name:"Deshaies",from:"2027-01-08",to:"2027-01-15",lat:16.3067,lng:-61.7925},
 {name:"Bouillante",from:"2027-01-15",to:"2027-01-22",lat:16.1300,lng:-61.7690}],pos:null};
@@ -15,39 +15,97 @@ function openModal(t,x,actions=[]){modalTitle.textContent=t;modalText.textConten
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{document.querySelectorAll("nav button,.tab").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(b.dataset.tab).classList.add("active")});
 closeModal.onclick=()=>modal.classList.add("hidden");
 
+function isDone(id){return (S.done||[]).includes(id)}
+function historyEntry(id){return (S.history||[]).find(x=>x.id===id)}
+function markDone(id){
+ if(isDone(id))return;
+ S.done=[...new Set([...(S.done||[]),id])];
+ S.today=(S.today||[]).filter(x=>x!==id);
+ S.history=[{id,at:new Date().toISOString()},...(S.history||[]).filter(x=>x.id!==id)];
+ save();renderToday();renderPlaces();renderHistory();renderHikes();
+}
+function restorePlace(id){
+ S.done=(S.done||[]).filter(x=>x!==id);
+ S.history=(S.history||[]).filter(x=>x.id!==id);
+ save();renderToday();renderPlaces();renderHistory();renderHikes();
+}
+window.markDone=markDone; window.restorePlace=restorePlace;
+function renderHistory(){
+ const el=document.getElementById("historyList"); if(!el)return;
+ const rows=(S.history||[]).map(h=>({h,p:all().find(x=>x.id===h.id)})).filter(x=>x.p);
+ document.getElementById("historyCount").textContent=`${rows.length} lieu${rows.length>1?'x':''} effectué${rows.length>1?'s':''}`;
+ el.innerHTML=rows.length?rows.map(({h,p})=>`<div class="historyItem"><div><b>✓ ${p.name}</b><div class="meta">${new Date(h.at).toLocaleDateString('fr-BE',{day:'2-digit',month:'short',year:'numeric'})}</div></div><button class="ghost" onclick="restorePlace('${p.id}')">Remettre à visiter</button></div>`).join(""):'<p class="meta">Aucune visite terminée pour le moment.</p>';
+}
 function renderToday(){
  let h=activeHome();homeName.textContent=h.name;
- dayList.innerHTML=all().map(p=>`<div class="card place"><input type="checkbox" data-day="${p.id}" ${S.today.includes(p.id)?"checked":""}><div><h3>${p.priority==="gem"?"💎":p.priority==="star"?"⭐":""} ${p.name}</h3><div class="meta">${p.cat} · env. ${p.duration||60} min</div><span class="tag">${p.note||"Lieu ajouté"}</span></div><button class="ghost" data-go="${p.id}">🧭</button></div>`).join("");
- document.querySelectorAll("[data-day]").forEach(c=>c.onchange=()=>{S.today=c.checked?[...new Set([...S.today,c.dataset.day])]:S.today.filter(x=>x!==c.dataset.day);save()});
+ const today=(S.today||[]).filter(id=>!isDone(id));
+ dayList.innerHTML=all().filter(p=>!isDone(p.id)).map(p=>`<div class="card place"><input type="checkbox" data-day="${p.id}" ${today.includes(p.id)?"checked":""}><div><h3>${p.priority==="gem"?"💎":p.priority==="star"?"⭐":""} ${p.name}</h3><div class="meta">${p.cat} · env. ${p.duration||60} min</div><span class="tag">${p.note||"Lieu ajouté"}</span>${HIKES[p.id]?`<div class="miniHike">🥾 ${HIKES[p.id].difficulty} · ${HIKES[p.id].duration}</div>`:""}</div><div class="todayActions"><button class="ghost" data-go="${p.id}">🧭</button>${today.includes(p.id)?`<button class="doneBtn" onclick="markDone('${p.id}')">✓ Fait</button>`:""}</div></div>`).join("");
+ document.querySelectorAll("[data-day]").forEach(c=>c.onchange=()=>{S.today=c.checked?[...new Set([...(S.today||[]),c.dataset.day])]:(S.today||[]).filter(x=>x!==c.dataset.day);save();renderToday()});
  document.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>{let p=all().find(x=>x.id===b.dataset.go);location.href=maps(p.lat?`${p.lat},${p.lng}`:p.query||p.name)});
+ const summary=document.getElementById("dayProgress"); if(summary)summary.textContent=`${today.length} à faire aujourd’hui · ${(S.done||[]).length} déjà effectuée(s) pendant le voyage`;
 }
 function renderPlaces(){
  let q=(search.value||"").toLowerCase(),w=week.value;
  let arr=all().filter(p=>(w==="all"||String(p.week)===w)&&p.name.toLowerCase().includes(q));
- placeList.innerHTML=arr.map(p=>`<div class="card"><h2>${p.priority==="gem"?"💎":p.priority==="star"?"⭐":""} ${p.name}</h2><div class="meta">${p.cat||"Lieu personnel"} · ${p.duration||60} min</div><p>${p.note||""}</p><div class="placeBtns"><button class="primary" onclick="location.href=maps('${p.lat?`${p.lat},${p.lng}`:(p.query||p.name).replaceAll("'","")}')">🧭 Y aller</button><button class="ghost" onclick="toggleDay('${p.id}')">${S.today.includes(p.id)?"✓ Dans la journée":"+ Journée"}</button>${p.custom?`<button class="ghost" onclick="removeCustom('${p.id}')">Supprimer</button>`:""}</div></div>`).join("")
+ if(S.hideDone)arr=arr.filter(p=>!isDone(p.id));
+ placeList.innerHTML=arr.map(p=>{let done=isDone(p.id);return `<div class="card ${done?'completedPlace':''}"><div class="titleRow"><h2>${done?'✓ ':p.priority==="gem"?'💎 ':p.priority==="star"?'⭐ ':''}${p.name}</h2>${done?'<span class="doneBadge">FAIT</span>':''}</div><div class="meta">${p.cat||"Lieu personnel"} · ${p.duration||60} min</div><p>${p.note||""}</p>${HIKES[p.id]?hikeInline(p):''}<div class="placeBtns">${done?`<button class="ghost" onclick="restorePlace('${p.id}')">↩ Remettre à visiter</button>`:`<button class="primary" onclick="location.href=maps('${p.lat?`${p.lat},${p.lng}`:(p.query||p.name).replaceAll("'","")}')">🧭 Y aller</button><button class="ghost" onclick="toggleDay('${p.id}')">${(S.today||[]).includes(p.id)?"✓ Dans la journée":"+ Journée"}</button><button class="doneBtn" onclick="markDone('${p.id}')">✓ Fait</button>`}${p.custom?`<button class="ghost" onclick="removeCustom('${p.id}')">Supprimer</button>`:""}</div></div>`}).join("")
+ const hd=document.getElementById('hideDone'); if(hd)hd.textContent=S.hideDone?'Afficher aussi les lieux faits':'Masquer les lieux faits';
 }
-window.toggleDay=id=>{S.today=S.today.includes(id)?S.today.filter(x=>x!==id):[...S.today,id];save();renderPlaces();renderToday()}
-window.removeCustom=id=>{S.custom=S.custom.filter(x=>x.id!==id);S.today=S.today.filter(x=>x!==id);save();renderPlaces();renderToday()}
+window.toggleDay=id=>{if(isDone(id))return;S.today=(S.today||[]).includes(id)?S.today.filter(x=>x!==id):[...(S.today||[]),id];save();renderPlaces();renderToday()}
+window.removeCustom=id=>{S.custom=S.custom.filter(x=>x.id!==id);S.today=(S.today||[]).filter(x=>x!==id);S.done=(S.done||[]).filter(x=>x!==id);S.history=(S.history||[]).filter(x=>x.id!==id);save();renderPlaces();renderToday();renderHistory()}
 search.oninput=renderPlaces;week.onchange=renderPlaces;
 addPlace.onclick=()=>{if(!newName.value.trim())return;S.custom.push({id:"c"+Date.now(),name:newName.value.trim(),query:newQuery.value.trim()||newName.value.trim(),cat:"Lieu personnel",duration:60,priority:"",custom:true});newName.value="";newQuery.value="";save();renderPlaces()}
 
 function analyze(){
- if(!S.today.length)return openModal("Programme","Choisissez d’abord au moins une visite.");
- let chosen=S.today.map(id=>all().find(p=>p.id===id)).filter(Boolean), mins=chosen.reduce((a,p)=>a+(p.duration||60),0)+S.delay;
+ const selected=(S.today||[]).filter(id=>!isDone(id));
+ if(!selected.length)return openModal("Programme","Choisissez d’abord au moins une visite encore à faire.");
+ let chosen=selected.map(id=>all().find(p=>p.id===id)).filter(Boolean), visitMins=chosen.reduce((a,p)=>a+(p.duration||60),0), mins=visitMins+S.delay;
  let now=new Date(), remaining=Math.max(0,(19-now.getHours())*60-now.getMinutes());
- if(S.delay===0)return openModal("Programme prioritaire",`Vos ${chosen.length} visite(s) restent prévues. Aucun retard déclaré. Je ne change rien.`);
- let short=all().filter(p=>!S.today.includes(p.id)&&(p.duration||60)<=90).slice(0,3);
- let msg=`Retard déclaré : ${S.delay} min. Votre programme choisi reste prioritaire. Temps de visite estimé restant : environ ${mins} min.`;
+ const names=chosen.map(p=>p.name).join(' → ');
+ if(S.delay===0)return openModal("Programme prioritaire",`${chosen.length} visite(s) prévues : ${names}. Environ ${Math.round(visitMins/60*10)/10} h de visites hors trajets. Je ne change rien.`);
+ let short=all().filter(p=>!selected.includes(p.id)&&!isDone(p.id)&&(p.duration||60)<=90).slice(0,3);
+ let feasible=remaining>=mins?'Le programme reste encore compatible avec une fin vers 19 h, hors trajets.':'Le temps restant devient serré pour tout faire avant 19 h, hors trajets.';
+ let msg=`Retard déclaré : ${S.delay} min. Votre programme choisi reste prioritaire. ${feasible}`;
  openModal("La journée a changé",msg,[
- {label:"➡️ Continuer exactement comme prévu",go:()=>{S.delay=0;save();advice.innerHTML='<div class="adviceResult">Programme conservé. La suite reste inchangée.</div>'}},
- {label:"🔄 Reporter la dernière visite",go:()=>{let last=S.today.at(-1);S.today=S.today.slice(0,-1);S.delay=0;save();renderToday();advice.innerHTML='<div class="adviceResult">La dernière visite a été retirée de la journée, mais reste dans À visiter.</div>'}},
+ {label:"➡️ Continuer exactement comme prévu",go:()=>{S.delay=0;save();advice.innerHTML='<div class="adviceResult">Programme conservé. Aucune visite n’a été retirée.</div>'}},
+ {label:"🔄 Reporter la dernière visite",go:()=>{let last=selected.at(-1);S.today=(S.today||[]).filter(x=>x!==last);S.delay=0;save();renderToday();advice.innerHTML='<div class="adviceResult">La dernière visite est reportée. Elle reste disponible dans À visiter.</div>'}},
  {label:"💡 Voir des alternatives plus courtes",go:()=>{advice.innerHTML='<div class="adviceResult"><b>Alternatives courtes possibles :</b><br>'+short.map(p=>`${p.name} — env. ${p.duration} min`).join("<br>")+'<br><small>Vous décidez : rien n’est remplacé automatiquement.</small></div>'}}
  ])
 }
 optimize.onclick=analyze;delay30.onclick=()=>{S.delay=30;save();analyze()};delay90.onclick=()=>{S.delay=90;save();analyze()};onTime.onclick=()=>{S.delay=0;save();advice.innerHTML='<div class="adviceResult">À l’heure : programme choisi conservé.</div>'}
-routeBtn.onclick=()=>{let a=S.today.map(id=>all().find(p=>p.id===id)).filter(Boolean);if(!a.length)return openModal("Parcours","Choisissez au moins une visite.");let d=a.at(-1),wp=a.slice(0,-1).map(p=>p.lat?`${p.lat},${p.lng}`:p.query||p.name).join("|");let u=maps(d.lat?`${d.lat},${d.lng}`:d.query||d.name);if(wp)u+="&waypoints="+encodeURIComponent(wp);location.href=u}
+routeBtn.onclick=()=>{let a=(S.today||[]).filter(id=>!isDone(id)).map(id=>all().find(p=>p.id===id)).filter(Boolean);if(!a.length)return openModal("Parcours","Choisissez au moins une visite.");let d=a.at(-1),wp=a.slice(0,-1).map(p=>p.lat?`${p.lat},${p.lng}`:p.query||p.name).join("|");let u=maps(d.lat?`${d.lat},${d.lng}`:d.query||d.name);if(wp)u+="&waypoints="+encodeURIComponent(wp);location.href=u}
 homeBtn.onclick=()=>{let h=activeHome();location.href=maps(`${h.lat},${h.lng}`)}
 
+const HIKES={
+ "soufriere":{difficulty:"Soutenu",duration:"3 h 30–4 h 30",distance:"env. 6 km A/R",note:"Sommet exposé : météo et accès à contrôler le matin."},
+ "carbet":{difficulty:"Modéré à soutenu",duration:"2 h 30–4 h",distance:"selon chute choisie",note:"Sentiers humides et glissants possibles."},
+ "trois-cornes":{difficulty:"Modéré",duration:"2 h 30–3 h 30",distance:"boucle / A-R selon accès",note:"Forêt tropicale : chaussures adaptées."},
+ "paradis":{difficulty:"Modéré",duration:"2–3 h",distance:"selon point de départ",note:"Accès à confirmer selon état du sentier."},
+ "traversee":{difficulty:"Facile à modéré",duration:"demi-journée",distance:"plusieurs sentiers",note:"Maison de la Forêt et départs de balades."},
+ "ecrevisses":{difficulty:"Facile",duration:"45 min–1 h 15",distance:"courte promenade",note:"Accès aménagé, fréquenté."}
+};
+let ignMap=null,ignMarker=null,gpsMarker=null;
+function hikeInline(p){const h=HIKES[p.id];return `<div class="hikeBox"><b>🥾 Promenade / randonnée</b><div>${h.distance} · ${h.duration} · ${h.difficulty}</div><small>${h.note}</small><div class="placeBtns"><button class="ignBtn" onclick="openIgnMap('${p.id}')">🗺️ Carte IGN</button><button class="ghost" onclick="location.href=maps('${p.lat},${p.lng}')">🚗 Parking / départ</button></div></div>`}
+function renderHikes(){
+ const el=document.getElementById('hikeList'); if(!el)return;
+ el.innerHTML=Object.keys(HIKES).map(id=>all().find(p=>p.id===id)).filter(Boolean).map(p=>`<div class="card ${isDone(p.id)?'completedPlace':''}"><div class="titleRow"><h2>${isDone(p.id)?'✓ ':''}🥾 ${p.name}</h2>${isDone(p.id)?'<span class="doneBadge">FAIT</span>':''}</div>${hikeInline(p)}${!isDone(p.id)?`<button class="doneBtn wide" onclick="markDone('${p.id}')">✓ Marquer comme fait</button>`:`<button class="ghost wide" onclick="restorePlace('${p.id}')">↩ Remettre à visiter</button>`}</div>`).join('');
+}
+window.openIgnMap=function(id){
+ const p=all().find(x=>x.id===id); if(!p||!p.lat)return;
+ document.getElementById('ignMapTitle').textContent=`🗺️ IGN · ${p.name}`;
+ document.getElementById('ignMapModal').classList.remove('hidden');
+ setTimeout(()=>{
+  if(!window.L){document.getElementById('ignMapFallback').classList.remove('hidden');return;}
+  if(ignMap){ignMap.remove();ignMap=null;}
+  ignMap=L.map('ignMap',{zoomControl:true}).setView([p.lat,p.lng],14);
+  L.tileLayer('https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/png',{maxZoom:18,attribution:'© IGN / Géoplateforme'}).addTo(ignMap);
+  ignMarker=L.marker([p.lat,p.lng]).addTo(ignMap).bindPopup(p.name).openPopup();
+  if(S.pos)gpsMarker=L.circleMarker([S.pos.lat,S.pos.lng],{radius:8}).addTo(ignMap).bindPopup('Votre position GPS');
+  setTimeout(()=>ignMap.invalidateSize(),200);
+ },80);
+};
+function closeIgn(){document.getElementById('ignMapModal').classList.add('hidden');if(ignMap){ignMap.remove();ignMap=null}}
+window.closeIgn=closeIgn;
 function gpsMessage(e){
  if(!e)return "Erreur GPS inconnue.";
  if(e.code===1)return "Accès GPS refusé par Safari pour ce site. Vérifiez Safari > Réglages du site web > Localisation.";
@@ -82,7 +140,10 @@ checkGem.onclick=()=>locate(()=>{let pos=S.pos,cands=all().filter(p=>p.lat&&p.pr
 notes.value=S.notes||"";saveNotes.onclick=()=>{S.notes=notes.value;save();openModal("Carnet","Informations enregistrées sur cet appareil.")}
 function renderHomes(){homes.innerHTML=S.homes.map((h,i)=>`<div class="card"><h2>🏠 ${h.name}</h2><div class="homeRow"><div class="meta">${h.from} → ${h.to}<br>${h.lat.toFixed(4)}, ${h.lng.toFixed(4)}</div><button class="ghost" data-home="${i}">Modifier</button></div></div>`).join("");document.querySelectorAll("[data-home]").forEach(b=>b.onclick=()=>{let i=+b.dataset.home,n=prompt("Nom du logement",S.homes[i].name),lat=prompt("Latitude",S.homes[i].lat),lng=prompt("Longitude",S.homes[i].lng);if(n&&lat&&lng){Object.assign(S.homes[i],{name:n,lat:+lat,lng:+lng});save();renderHomes();renderToday()}})}
 notify.onclick=async()=>{if(!("Notification"in window))return openModal("Notifications","Ce navigateur ne prend pas en charge les notifications web.");let r=await Notification.requestPermission();openModal("Notifications",r==="granted"?"Notifications autorisées.":"Autorisation non accordée.")}
-renderHomes();renderToday();renderPlaces();
+const hideDoneBtn=document.getElementById('hideDone'); if(hideDoneBtn)hideDoneBtn.onclick=()=>{S.hideDone=!S.hideDone;save();renderPlaces()};
+const closeIgnBtn=document.getElementById('closeIgnMap'); if(closeIgnBtn)closeIgnBtn.onclick=closeIgn;
+const useGpsIgn=document.getElementById('ignUseGps'); if(useGpsIgn)useGpsIgn.onclick=()=>locate(pos=>{if(ignMap){if(gpsMarker)ignMap.removeLayer(gpsMarker);gpsMarker=L.circleMarker([pos.lat,pos.lng],{radius:8}).addTo(ignMap).bindPopup('Votre position GPS').openPopup();ignMap.setView([pos.lat,pos.lng],15)}});
+renderHomes();renderToday();renderPlaces();renderHistory();renderHikes();
 if("serviceWorker"in navigator)navigator.serviceWorker.register("/sw.js");
 
 
@@ -338,8 +399,8 @@ window.addEventListener("load",()=>{
  const f=document.getElementById("fileInput"); if(f)f.onchange=e=>{addVaultFile(e.target.files[0]);e.target.value=""};
 });
 
-/* ===== V0.3.3 : mises à jour PWA fiables ===== */
-const APP_VERSION = "0.3.3";
+/* ===== V0.3.4 : IGN + journée intelligente + historique ===== */
+const APP_VERSION = "0.4.0";
 let swRegistration = null;
 let refreshingForUpdate = false;
 
@@ -402,4 +463,140 @@ if("serviceWorker" in navigator){
 window.addEventListener("load", ()=>{
  const v=document.getElementById("appVersion"); if(v) v.textContent=`v${APP_VERSION}`;
  const b=document.getElementById("checkUpdate"); if(b) b.onclick=()=>checkForAppUpdate(true);
+});
+
+/* ===== V0.4.0 : moteur séjour + météo + progression + journée réaliste ===== */
+S.revisit=S.revisit||[]; S.homeOverride=S.homeOverride||"auto"; S.weatherCache=S.weatherCache||{}; save();
+
+function tripDateISO(){ return new Date().toISOString().slice(0,10); }
+function activeHome(){
+ if(S.homeOverride!=="auto" && S.homes[+S.homeOverride]) return S.homes[+S.homeOverride];
+ const d=tripDateISO(); return S.homes.find(h=>d>=h.from&&d<h.to)||S.homes[0];
+}
+function activeHomeIndex(){return Math.max(0,S.homes.indexOf(activeHome()))}
+function placeWeekForHome(){return activeHomeIndex()+1}
+function isRevisit(id){return (S.revisit||[]).includes(id)}
+function eligibleToday(id){return !isDone(id)||isRevisit(id)}
+function roadKm(a,b){return Math.max(.3,km(a,b)*1.28)}
+function driveMin(a,b){const d=roadKm(a,b); return Math.max(5,Math.round((d/43)*60+3));}
+function fmtKm(v){return v<10?v.toFixed(1):String(Math.round(v))}
+function coords(x){return {lat:+x.lat,lng:+x.lng}}
+function pDurationText(p){const m=p.duration||60;if(m>=360)return `${Math.round(m/60)} h environ`;if(m>=120){let a=(m-30)/60,b=(m+30)/60;return `${a%1?a.toFixed(1):a}–${b%1?b.toFixed(1):b} h`;}return `${m} min environ`}
+function weatherSensitivity(p){
+ const c=(p.cat||"").toLowerCase(),id=p.id;
+ if(["petite-terre","saintes"].includes(id)||c.includes("bateau")||c.includes("snorkeling"))return "sun";
+ if(c.includes("plage"))return "sun";
+ if(id==="soufriere")return "mountain";
+ if(c.includes("forêt")||c.includes("cascade")||c.includes("jardin")||c.includes("village")||c.includes("ville"))return "cloud";
+ return "neutral";
+}
+function sectorStatus(p){
+ const w=placeWeekForHome();
+ if(String(p.week)===String(w))return {rank:0,label:"🟢 Idéal depuis ce logement",cls:"sectorGood"};
+ const h=activeHome(); if(p.lat){const d=roadKm(h,p); if(d<22)return {rank:1,label:"🟡 Possible, mais mieux depuis une autre base",cls:"sectorLater"};}
+ return {rank:2,label:"⚪ Hors secteur actuellement",cls:"sectorFar"};
+}
+function weatherLabel(p){
+ const wx=S.weatherNow; if(!wx)return "";
+ const s=weatherSensitivity(p);
+ if(wx.kind==="sun" && (s==="sun"||s==="mountain"))return '<span class="sectorBadge weatherGood">☀️ Bonne fenêtre météo</span>';
+ if(wx.kind!=="sun" && s==="sun")return '<span class="sectorBadge weatherNeutral">🌥️ À garder si possible pour une belle journée</span>';
+ if(wx.kind!=="sun" && s==="cloud")return '<span class="sectorBadge weatherGood">🌿 Adapté à une journée maussade</span>';
+ if(s==="mountain" && wx.kind!=="sun")return '<span class="sectorBadge weatherNeutral">⛰️ Météo à contrôler avant départ</span>';
+ return "";
+}
+async function loadWeather(force=false){
+ const h=activeHome(),key=`${h.lat.toFixed(2)},${h.lng.toFixed(2)}`;
+ const old=S.weatherCache[key]; if(!force&&old&&Date.now()-old.at<30*60*1000){S.weatherNow=old.data;renderWeather();return old.data}
+ try{
+  const u=`https://api.open-meteo.com/v1/forecast?latitude=${h.lat}&longitude=${h.lng}&current=temperature_2m,precipitation,weather_code,cloud_cover&daily=weather_code,precipitation_probability_max&timezone=America%2FGuadeloupe&forecast_days=7`;
+  const r=await fetch(u,{cache:"no-store"}); if(!r.ok)throw new Error("weather"); const j=await r.json();
+  const code=j.current?.weather_code??0,cloud=j.current?.cloud_cover??0,prec=j.current?.precipitation??0;
+  let kind=(code<=2&&cloud<55&&prec<0.2)?"sun":((code>=51||prec>0.5)?"rain":"cloud");
+  const data={kind,temp:Math.round(j.current?.temperature_2m||0),cloud,prec,code,daily:j.daily};
+  S.weatherNow=data;S.weatherCache[key]={at:Date.now(),data};save();renderWeather();renderPlaces();return data;
+ }catch(e){const el=document.getElementById("weatherToday");if(el)el.textContent="🌤️ Météo indisponible pour le moment.";return null}
+}
+function renderWeather(){
+ const el=document.getElementById("weatherToday"),w=S.weatherNow;if(!el)return;if(!w){el.textContent="🌤️ Météo : connexion nécessaire.";return}
+ const t=w.kind==="sun"?"Belle fenêtre météo":w.kind==="rain"?"Journée humide / maussade":"Ciel mitigé / maussade";
+ el.innerHTML=`${w.kind==="sun"?"☀️":w.kind==="rain"?"🌧️":"🌥️"} <b>${t}</b> · ${w.temp} °C · nuages ${w.cloud}%<br><span class="meta">La météo influence le type d’activité, jamais le secteur du logement.</span>`;
+}
+function selectedPlaces(){return (S.today||[]).filter(eligibleToday).map(id=>all().find(p=>p.id===id)).filter(Boolean)}
+function routeHTML(list){
+ if(!list.length)return ""; const h=activeHome();let prev=h,totalKm=0,totalDrive=0,totalVisit=0,out='<div class="routePlan"><b>🚗 Parcours du jour</b>';
+ list.forEach((p,i)=>{const d=roadKm(prev,p),m=driveMin(prev,p);totalKm+=d;totalDrive+=m;totalVisit+=p.duration||60;out+=`<div class="routeStep"><b>${i?`${i+1}. `:"1. "}${p.name}</b><div class="routeArrow">${i?prev.name:"🏠 "+h.name} → ${p.name} : <b>${fmtKm(d)} km · ${m} min</b><br>⏱️ Sur place : <b>${pDurationText(p)}</b></div></div>`;prev=p});
+ const d=roadKm(prev,h),m=driveMin(prev,h);totalKm+=d;totalDrive+=m;out+=`<div class="routeStep"><b>🏠 Retour au logement</b><div class="routeArrow">${prev.name} → ${h.name} : <b>${fmtKm(d)} km · ${m} min</b></div></div>`;
+ out+=`<div class="adviceResult"><b>Total indicatif :</b> ${fmtKm(totalKm)} km · ${Math.round(totalDrive/5)*5} min de conduite · ${Math.round(totalVisit/30)/2} h sur les lieux.<br><small>Les temps routiers sont des estimations. Google Maps donnera le trafic réel au départ.</small></div></div>`;return out;
+}
+function renderRouteSummary(){const el=document.getElementById("dayRouteSummary");if(el)el.innerHTML=routeHTML(selectedPlaces())}
+function setTodayPlan(ids,revisits=[]){S.today=[...new Set(ids)];S.revisit=[...new Set([...(S.revisit||[]),...revisits])];save();renderToday();renderRouteSummary()}
+function scorePlace(p){
+ const h=activeHome(),sec=sectorStatus(p); if(sec.rank===2)return -9999; let s=100-sec.rank*35; const d=roadKm(h,p);s-=d*.7;
+ const ws=weatherSensitivity(p),wk=S.weatherNow?.kind;if(wk==="sun"&&(ws==="sun"||ws==="mountain"))s+=28;if(wk!=="sun"&&ws==="sun")s-=28;if(wk!=="sun"&&ws==="cloud")s+=18;
+ if(p.priority==="gem")s+=10;if((p.duration||60)>360)s-=4;
+ const recent=(S.history||[]).slice(0,3).map(x=>all().find(p=>p.id===x.id)).filter(Boolean); if(recent.some(r=>r.lat&&p.lat&&roadKm(r,p)<7))s-=18;
+ return s;
+}
+function proposeDay(){
+ let c=all().filter(p=>!isDone(p.id)&&sectorStatus(p).rank<2).sort((a,b)=>scorePlace(b)-scorePlace(a)); if(!c.length)return openModal("Proposition","Il ne reste plus de visite non effectuée dans ce secteur.");
+ let main=c[0]; const mainDur=main.duration||60; let plan=[main];
+ // Maximum un complément, uniquement s'il est réellement proche et si la journée reste raisonnable.
+ if(mainDur<260){let near=c.slice(1).filter(p=>(p.duration||60)<=180&&roadKm(main,p)<=8).sort((a,b)=>roadKm(main,a)-roadKm(main,b))[0];if(near&&(mainDur+(near.duration||60))<=360)plan.push(near)}
+ const msg=routeHTML(plan)+`<p><b>Pourquoi :</b> secteur ${activeHome().name}, météo actuelle et regroupement géographique. Par défaut, une activité principale${plan.length>1?' + un complément proche':''}.</p>`;
+ openModal("✨ Proposition de journée","",[
+  {label:"✓ Utiliser cette proposition",go:()=>setTodayPlan(plan.map(p=>p.id))},
+  {label:"Non, garder mes choix",go:()=>{}}
+ ]);document.getElementById("modalText").innerHTML=msg;
+}
+function fatigueAlternatives(){
+ const origin=S.pos||coords(activeHome()); let c=all().filter(p=>!isDone(p.id)&&sectorStatus(p).rank<2&&p.lat).map(p=>({...p,near:roadKm(origin,p)})).filter(p=>p.near<16&&(p.cat||"").match(/Plage|Ville|Village|Jardin/)).sort((a,b)=>a.near-b.near).slice(0,4);
+ if(!c.length)return "Aucune alternative calme de notre sélection à proximité immédiate.";
+ return c.map(p=>`<b>${p.name}</b> — ${fmtKm(p.near)} km · env. ${driveMin(origin,p)} min · ${pDurationText(p)}`).join("<br>")+`<br><small>Possibilité de l’avancer même si elle était prévue plus tard.</small>`;
+}
+function adaptDayMenu(){
+ openModal("🔄 Adapter ma journée","Choisissez la raison. Rien ne sera modifié sans votre accord.",[
+  {label:"😴 Nous sommes fatigués",go:()=>{openModal("Alternatives plus tranquilles",fatigueAlternatives(),[{label:"Fermer",go:()=>{}}]);}},
+  {label:"🌥️ Journée maussade",go:()=>{let c=all().filter(p=>!isDone(p.id)&&sectorStatus(p).rank<2&&weatherSensitivity(p)==="cloud").sort((a,b)=>scorePlace(b)-scorePlace(a)).slice(0,4);openModal("Moins dépendant du beau temps",c.map(p=>`<b>${p.name}</b> — ${fmtKm(roadKm(activeHome(),p))} km · env. ${driveMin(activeHome(),p)} min · ${pDurationText(p)}`).join("<br>")||"Aucune alternative enregistrée.");document.getElementById('modalText').innerHTML=document.getElementById('modalText').textContent;}},
+  {label:"🏖️ Envie d’une plage",go:()=>{let c=all().filter(p=>!isDone(p.id)&&sectorStatus(p).rank<2&&(p.cat||"").includes("Plage")).sort((a,b)=>scorePlace(b)-scorePlace(a)).slice(0,4);openModal("Plages cohérentes avec votre secteur",c.map(p=>`${p.name} — ${fmtKm(roadKm(S.pos||activeHome(),p))} km · ${pDurationText(p)}`).join("\n"));}},
+  {label:"🏠 Rentrer plus tôt",go:()=>openModal("Retour logement",`Depuis votre position, utilisez « Retour logement ». Le reste du programme restera disponible pour un autre jour.`)}
+ ]);
+}
+function addRevisit(id){ if(!(S.today||[]).includes(id))S.today.push(id);S.revisit=[...new Set([...(S.revisit||[]),id])];save();renderToday();renderPlaces(); }
+window.addRevisit=addRevisit;
+
+// Une visite refaite reste dans l'historique et peut donc apparaître plusieurs fois.
+const markDoneBase=markDone;
+markDone=function(id){
+ if(isDone(id)&&isRevisit(id)){
+  S.today=(S.today||[]).filter(x=>x!==id);S.revisit=(S.revisit||[]).filter(x=>x!==id);S.history=[{id,at:new Date().toISOString(),revisit:true},...(S.history||[])];save();renderToday();renderPlaces();renderHistory();renderHikes();return;
+ }
+ markDoneBase(id);
+};window.markDone=markDone;
+
+function renderToday(){
+ const h=activeHome();homeName.textContent=h.name; const ids=(S.today||[]).filter(eligibleToday);const chosen=ids.map(id=>all().find(p=>p.id===id)).filter(Boolean);
+ dayList.innerHTML=all().filter(p=>!isDone(p.id)||isRevisit(p.id)).map(p=>`<div class="card place"><input type="checkbox" data-day="${p.id}" ${ids.includes(p.id)?"checked":""}><div><h3>${isRevisit(p.id)?"↻ ":p.priority==="gem"?"💎 ":p.priority==="star"?"⭐ ":""}${p.name}</h3><div class="meta">${p.cat} · ${pDurationText(p)}</div><span class="tag">${p.note||"Lieu ajouté"}</span>${HIKES[p.id]?`<div class="miniHike">🥾 ${HIKES[p.id].difficulty} · ${HIKES[p.id].duration}</div>`:""}</div><div class="todayActions"><button class="ghost" data-go="${p.id}">🧭</button>${ids.includes(p.id)?`<button class="doneBtn" onclick="markDone('${p.id}')">✓ Fait</button>`:""}</div></div>`).join("");
+ document.querySelectorAll("[data-day]").forEach(c=>c.onchange=()=>{S.today=c.checked?[...new Set([...(S.today||[]),c.dataset.day])]:(S.today||[]).filter(x=>x!==c.dataset.day);if(!c.checked)S.revisit=(S.revisit||[]).filter(x=>x!==c.dataset.day);save();renderToday()});
+ document.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>{let p=all().find(x=>x.id===b.dataset.go);location.href=maps(p.lat?`${p.lat},${p.lng}`:p.query||p.name)});
+ const summary=document.getElementById("dayProgress");if(summary)summary.textContent=`${chosen.length} étape${chosen.length>1?'s':''} aujourd’hui · ${(S.history||[]).length} visite(s) enregistrée(s) dans l’historique`;
+ renderRouteSummary();
+}
+function renderPlaces(){
+ let q=(search.value||"").toLowerCase(),w=week.value;let arr=all().filter(p=>(w==="all"||String(p.week)===w)&&p.name.toLowerCase().includes(q));if(S.hideDone)arr=arr.filter(p=>!isDone(p.id));
+ arr.sort((a,b)=>sectorStatus(a).rank-sectorStatus(b).rank||scorePlace(b)-scorePlace(a));
+ placeList.innerHTML=arr.map(p=>{let done=isDone(p.id),sec=sectorStatus(p);return `<div class="card ${done?'completedPlace ':''}${sec.rank===0?'zoneGood':sec.rank===1?'zoneLater':'zoneFar'}"><div class="titleRow"><h2>${done?'✓ ':p.priority==="gem"?'💎 ':p.priority==="star"?'⭐ ':''}${p.name}</h2>${done?'<span class="doneBadge">FAIT</span>':''}</div><span class="sectorBadge ${sec.cls}">${sec.label}</span>${weatherLabel(p)}<div class="meta">${p.cat||"Lieu personnel"} · ${pDurationText(p)} · depuis ${activeHome().name}: ${p.lat?`${fmtKm(roadKm(activeHome(),p))} km · env. ${driveMin(activeHome(),p)} min`:"distance inconnue"}</div><p>${p.note||""}</p>${HIKES[p.id]?hikeInline(p):''}<div class="placeBtns">${done?`<button class="revisitBtn" onclick="addRevisit('${p.id}')">↻ Refaire cette visite</button><button class="ghost" onclick="restorePlace('${p.id}')">↩ Retirer de l’historique</button>`:`<button class="primary" onclick="location.href=maps('${p.lat?`${p.lat},${p.lng}`:(p.query||p.name).replaceAll("'","")}')">🧭 Y aller</button><button class="ghost" onclick="toggleDay('${p.id}')">${(S.today||[]).includes(p.id)?"✓ Dans la journée":"+ Journée"}</button><button class="doneBtn" onclick="markDone('${p.id}')">✓ Fait</button>`}${p.custom?`<button class="ghost" onclick="removeCustom('${p.id}')">Supprimer</button>`:""}</div></div>`}).join("");
+ const hd=document.getElementById('hideDone');if(hd)hd.textContent=S.hideDone?'Afficher aussi les lieux faits':'Masquer les lieux faits';
+}
+function renderHomes(){
+ const ov=document.getElementById("homeOverride");if(ov){ov.innerHTML='<option value="auto">Automatique selon la date</option>'+S.homes.map((h,i)=>`<option value="${i}" ${String(S.homeOverride)===String(i)?'selected':''}>${h.name}</option>`).join('');ov.value=S.homeOverride;ov.onchange=()=>{S.homeOverride=ov.value;save();renderHomes();renderToday();renderPlaces();loadWeather(true)}}
+ homes.innerHTML=S.homes.map((h,i)=>`<div class="card"><h2>🏠 Étape ${i+1} · ${h.name}</h2><div class="homeEditGrid"><label>Nom<input data-hname="${i}" value="${h.name.replaceAll('"','&quot;')}"></label><label>Adresse / repère<input data-haddr="${i}" value="${h.address||''}" placeholder="Adresse exacte du logement"></label><label>Du<input type="date" data-hfrom="${i}" value="${h.from}"></label><label>Au<input type="date" data-hto="${i}" value="${h.to}"></label><label>Latitude<input data-hlat="${i}" value="${h.lat}"></label><label>Longitude<input data-hlng="${i}" value="${h.lng}"></label><button class="ghost full" data-usegpshome="${i}">📍 Utiliser ma position GPS comme coordonnées du logement</button><button class="primary full" data-savehome="${i}">Enregistrer ce logement</button></div></div>`).join('');
+ document.querySelectorAll('[data-savehome]').forEach(b=>b.onclick=()=>{const i=+b.dataset.savehome,g=a=>document.querySelector(`[${a}="${i}"]`).value.trim();Object.assign(S.homes[i],{name:g('data-hname'),address:g('data-haddr'),from:g('data-hfrom'),to:g('data-hto'),lat:+g('data-hlat'),lng:+g('data-hlng')});save();renderHomes();renderToday();renderPlaces();loadWeather(true)});
+ document.querySelectorAll('[data-usegpshome]').forEach(b=>b.onclick=()=>locate(pos=>{const i=+b.dataset.usegpshome;S.homes[i].lat=pos.lat;S.homes[i].lng=pos.lng;save();renderHomes();renderToday();renderPlaces()}));
+}
+
+window.addEventListener("load",()=>{
+ const s=document.getElementById("suggestDay");if(s)s.onclick=proposeDay;
+ const a=document.getElementById("adaptDay");if(a)a.onclick=adaptDayMenu;
+ renderHomes();renderToday();renderPlaces();renderHistory();loadWeather(false);
 });
