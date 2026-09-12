@@ -243,3 +243,69 @@ window.addEventListener("load",()=>{
  const c=document.getElementById("cameraInput"); if(c)c.onchange=e=>{addVaultFile(e.target.files[0]);e.target.value=""};
  const f=document.getElementById("fileInput"); if(f)f.onchange=e=>{addVaultFile(e.target.files[0]);e.target.value=""};
 });
+
+/* ===== V0.3.1 : mises à jour PWA fiables ===== */
+const APP_VERSION = "0.3.1";
+let swRegistration = null;
+let refreshingForUpdate = false;
+
+function setUpdateText(text){
+ const el=document.getElementById("updateText");
+ if(el) el.textContent=text;
+}
+
+async function checkForAppUpdate(manual=false){
+ if(!("serviceWorker" in navigator)){
+  if(manual) setUpdateText("Les mises à jour automatiques ne sont pas disponibles dans ce navigateur.");
+  return;
+ }
+ try{
+  const reg = swRegistration || await navigator.serviceWorker.getRegistration();
+  if(!reg){
+   if(manual) setUpdateText("Service de mise à jour non encore installé. Rechargez la page une fois.");
+   return;
+  }
+  if(manual) setUpdateText("Vérification de la nouvelle version…");
+  await reg.update();
+  if(manual && !reg.waiting && !reg.installing) setUpdateText(`Vous utilisez la version ${APP_VERSION}, à jour.`);
+ }catch(e){
+  if(manual) setUpdateText("Impossible de vérifier maintenant. Réessayez avec une connexion internet.");
+ }
+}
+
+if("serviceWorker" in navigator){
+ window.addEventListener("load", async ()=>{
+  try{
+   swRegistration = await navigator.serviceWorker.register("/sw.js", {updateViaCache:"none"});
+   setUpdateText(`Version ${APP_VERSION} · vérification automatique active.`);
+
+   swRegistration.addEventListener("updatefound", ()=>{
+    const worker = swRegistration.installing;
+    if(!worker) return;
+    setUpdateText("Nouvelle version détectée… installation en cours.");
+    worker.addEventListener("statechange", ()=>{
+     if(worker.state === "installed" && navigator.serviceWorker.controller){
+      setUpdateText("Nouvelle version installée · actualisation…");
+     }
+    });
+   });
+
+   // Vérifie à l'ouverture et lorsque l'utilisateur revient dans l'app.
+   checkForAppUpdate(false);
+   document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) checkForAppUpdate(false); });
+  }catch(e){
+   setUpdateText("La vérification automatique n’a pas pu démarrer.");
+  }
+ });
+
+ navigator.serviceWorker.addEventListener("controllerchange", ()=>{
+  if(refreshingForUpdate) return;
+  refreshingForUpdate = true;
+  window.location.reload();
+ });
+}
+
+window.addEventListener("load", ()=>{
+ const v=document.getElementById("appVersion"); if(v) v.textContent=`v${APP_VERSION}`;
+ const b=document.getElementById("checkUpdate"); if(b) b.onclick=()=>checkForAppUpdate(true);
+});

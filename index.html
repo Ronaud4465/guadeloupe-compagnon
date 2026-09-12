@@ -3,7 +3,7 @@
 <meta name="theme-color" content="#0a675e"><title>Guadeloupe Compagnon</title>
 <link rel="manifest" href="/manifest.webmanifest"><link rel="stylesheet" href="/style.css">
 </head><body>
-<header><div><b>🌴 Guadeloupe 2027</b><small>1 → 22 janvier · compagnon de voyage</small></div><button id="locate" title="État GPS">📍</button></header>
+<header><div><b>🌴 Guadeloupe 2027</b><small>1 → 22 janvier · compagnon de voyage · <span id="appVersion">v0.3.1</span></small></div><button id="locate" title="État GPS">📍</button></header>
 <nav>
 <button data-tab="today" class="active">☀️<span>Aujourd’hui</span></button>
 <button data-tab="discover">🌴<span>Découvrir</span></button>
@@ -92,6 +92,7 @@
 <section id="settings" class="tab">
 <div class="sectionHead"><h1>Notre voyage</h1><p>Les logements sont modifiables dès que vous avez les adresses exactes.</p></div>
 <div id="homes"></div>
+<div class="card updateCard"><div class="titleRow"><h2>🔄 Mise à jour</h2><span class="versionBadge">v0.3.1</span></div><p id="updateText">L’application vérifie automatiquement les nouvelles versions.</p><button id="checkUpdate" class="ghost wide">Vérifier maintenant</button></div>
 <div class="card"><h2>🔔 Notifications</h2><p>Autorisez-les pour les alertes utiles pendant que l’application est utilisée. Les notifications push en arrière-plan seront la prochaine étape.</p><button id="notify" class="primary">Autoriser les notifications</button></div>
 <div class="card"><h2>Règles de l’assistant</h2><p>✓ Le programme choisi reste prioritaire.<br>✓ Aucune visite n’est remplacée sans votre accord.<br>✓ En cas de retard : continuer, reporter ou voir une alternative.<br>✓ Une visite reportée n’est jamais supprimée.<br>✓ Les 💎 sont rares et réservées aux vraies pépites.</p></div>
 </section>

@@ -30,3 +30,13 @@ Diagnostic GPS détaillé pour Safari/iPhone, état GPS visible, délai 20 s et 
 - Rien n'est envoyé vers GitHub/Vercel.
 - Limite actuelle : 15 Mo par document.
 - Attention : effacer les données Safari ou perdre l'appareil peut supprimer le coffre. Garder les originaux.
+
+
+## V0.3.1 — Mise à jour automatique
+- corrige le cache PWA persistant sur iPhone/Safari
+- supprime automatiquement les anciens caches lors de l’activation
+- force l’activation immédiate du nouveau service worker
+- page HTML et fichiers applicatifs chargés en priorité depuis le réseau
+- conserve un cache de secours pour l’utilisation hors ligne
+- affiche la version de l’application et un bouton « Vérifier maintenant »
+- le coffre local chiffré IndexedDB n’est ni supprimé ni modifié par les mises à jour
