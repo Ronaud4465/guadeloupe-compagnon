@@ -1,0 +1,131 @@
+<!doctype html><html lang="fr"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0a675e"><title>Guadeloupe Compagnon</title>
+<link rel="manifest" href="/manifest.webmanifest"><link rel="stylesheet" href="/style.css?v=053"><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+</head><body>
+<header><div><b>🌴 Guadeloupe 2027</b><small>1 → 22 janvier · compagnon de voyage · <span id="appVersion"><span data-app-version>v0.5.9</span></span></small></div><button id="locate" title="État GPS">📍</button></header>
+<nav>
+<button data-tab="today" class="active">☀️<span>Aujourd’hui</span></button>
+<button data-tab="discover">🌴<span>Découvrir</span></button>
+<button data-tab="near">💎<span>Autour</span></button>
+<button data-tab="docs">🎫<span>Infos</span></button>
+<button data-tab="settings">⚙️<span>Voyage</span></button>
+</nav>
+<main>
+<section id="today" class="tab active">
+<div class="hero"><div><small>BASE ACTIVE</small><h1 id="homeName">Sainte-Anne</h1><p id="dateHint">Votre programme reste toujours prioritaire.</p></div><button id="homeBtn">🏠 Retour logement</button></div>
+<div class="card"><div class="titleRow"><h2>Ma journée</h2><button class="ghost" id="optimize">Analyser</button></div><div id="dayProgress" class="meta"></div>
+<div id="weatherToday" class="weatherStrip">🌤️ Météo : chargement…</div>
+<div class="smartActions"><button class="primary" id="suggestDay">✨ Proposer ma journée</button><button class="ghost" id="adaptDay">🔄 Adapter ma journée</button></div>
+<div id="dayRouteSummary"></div>
+<div id="dayList"></div><button class="primary wide" id="routeBtn">🧭 Démarrer le parcours choisi</button></div><div class="card"><div class="titleRow"><h2>✓ Historique</h2><span id="historyCount" class="doneBadge">0 lieu effectué</span></div><div id="historyList"></div></div>
+<div id="gpsStatus" class="card"><h2>📍 GPS</h2><p id="gpsText">Position non vérifiée.</p><button class="primary" id="gpsTest">Tester ma position</button></div><div id="advisor" class="card advisor"><h2>🧠 Journée intelligente</h2><p>Je conserve toujours vos choix. Si la journée prend du retard, je vous demande avant toute modification.</p><div class="actions"><button id="delay30">+30 min</button><button id="delay90">+1 h 30</button><button id="onTime">À l’heure</button></div><div id="advice"></div></div>
+</section>
+
+<section id="discover" class="tab">
+<div class="sectionHead"><h1>À visiter</h1><p>Un lieu terminé passe dans l’historique et peut être grisé ou masqué.</p></div><button id="hideDone" class="ghost wide">Masquer les lieux faits</button>
+<div class="filters"><input id="search" placeholder="Rechercher un lieu…"><select id="week"><option value="all">Toutes les zones</option><option value="1">Grande-Terre</option><option value="2">Deshaies / nord Basse-Terre</option><option value="3">Bouillante / sud Basse-Terre</option></select></div>
+<div id="placeList"></div>
+<div class="card"><h2>➕ Ajouter un lieu</h2><input id="newName" placeholder="Nom du lieu"><input id="newQuery" placeholder="Adresse ou recherche Google Maps"><button class="primary wide" id="addPlace">Ajouter</button></div>
+</section>
+
+<section id="near" class="tab">
+<div class="sectionHead"><h1>Autour de nous</h1><p>Marchés, animations, folklore, nautisme, restaurants et pépites.</p></div>
+<div class="nearGrid">
+<button data-near="marché local">🥭<b>Marchés</b></button><button data-near="événements aujourd'hui">🎉<b>Animations</b></button>
+<button data-near="régate voile nautisme">⛵<b>Nautisme</b></button><button data-near="gwoka culture créole">🪘<b>Folklore</b></button>
+<button data-near="restaurant créole">🍴<b>Manger</b></button><button data-near="bar local">🍹<b>Boire</b></button>
+</div>
+<div class="card gem"><h2>💎 Pépite à proximité</h2><p id="gemText">Activez votre position. L’app signalera uniquement les lieux vraiment remarquables à très faible détour.</p><button class="primary" id="checkGem">Chercher maintenant</button></div>
+<div class="card"><h2>⭐ Recherche libre autour de moi</h2><input id="nearQuery" placeholder="Ex. marché nocturne, bokit, artisan…"><button class="primary wide" id="nearSearch">Chercher à proximité</button></div>
+<div class="sectionHead"><h1>🥾 Promenades autour de moi</h1><p>Utilise votre GPS pour rechercher de vrais itinéraires pédestres publics autour de votre position, y compris hors Guadeloupe. Les randonnées Guadeloupe vérifiées restent affichées séparément plus bas.</p></div>
+<div class="card"><div class="titleRow"><h2>📍 Rayon de recherche</h2><span id="nearHikeStatus" class="meta">Appuyez sur Rechercher</span></div><div class="radiusRow"><button class="ghost hikeRadius active" data-radius="2">2 km</button><button class="ghost hikeRadius" data-radius="5">5 km</button><button class="ghost hikeRadius" data-radius="10">10 km</button><button class="ghost hikeRadius" data-radius="20">20 km</button></div><button id="nearHikesBtn" class="primary wide">🥾 Rechercher les promenades autour de moi</button><p class="meta">La recherche en ligne utilise les itinéraires pédestres référencés dans OpenStreetMap. Durée, distance du parcours et difficulté ne sont affichées que si la source les renseigne : sinon l’app indique « non renseignée ». La distance depuis vous est calculée par GPS.</p></div>
+<div id="nearHikeList"></div>
+<div class="sectionHead"><h1>🗺️ Toutes les randonnées & promenades</h1><p>Carte IGN officielle, GPS, départ et difficulté. Appuyez sur <b>🗺️ Carte IGN</b> sous la randonnée choisie.</p></div><div id="hikeList"></div><div class="card"><p class="meta">La carte utilise le fond Plan IGN de la Géoplateforme. Pour préparer des zones hors connexion, l’application mobile Cartes IGN reste recommandée.</p><button class="ghost wide" onclick="location.href='https://cartes.gouv.fr/'">Ouvrir cartes.gouv.fr</button></div>
+</section>
+
+
+<section id="docs" class="tab">
+<div class="sectionHead"><h1>Billets & coffre voyage</h1><p>Billets, QR codes et copies de documents, conservés localement sur cet appareil.</p></div>
+
+<div class="card vaultIntro">
+  <h2>🔐 Coffre voyage</h2>
+  <p><b>Les documents ne sont pas envoyés sur GitHub ni sur Vercel.</b> Ils sont chiffrés sur cet iPhone dans le stockage du navigateur.</p>
+  <div id="vaultLocked">
+    <input id="vaultPin" type="password" inputmode="numeric" autocomplete="off" placeholder="Code du coffre (4 chiffres minimum)">
+    <button class="primary wide" id="unlockVault">Ouvrir / créer le coffre</button>
+    <p class="meta">⚠️ Si vous oubliez le code, nous ne pouvons pas récupérer les documents. Gardez aussi les originaux avec vous.</p>
+  </div>
+  <div id="vaultOpen" class="hidden">
+    <div class="vaultState">🟢 Coffre déverrouillé sur cet appareil</div>
+    <button class="ghost wide" id="lockVault">Verrouiller</button>
+    <button class="ghost wide" id="showChangePin">🔑 Modifier le code PIN</button>
+    <div id="changePinBox" class="hidden" style="margin-top:12px">
+      <input id="newVaultPin" type="password" inputmode="numeric" autocomplete="new-password" placeholder="Nouveau code (4 chiffres minimum)">
+      <input id="confirmVaultPin" type="password" inputmode="numeric" autocomplete="new-password" placeholder="Confirmer le nouveau code">
+      <button class="primary wide" id="changeVaultPin">Enregistrer le nouveau code</button>
+      <button class="ghost wide" id="cancelChangePin">Annuler</button>
+      <p class="meta">Tous les documents seront rechiffrés avec le nouveau code. Aucun document n’est supprimé.</p>
+    </div>
+  </div>
+</div>
+
+<div id="vaultManager" class="hidden">
+  <div class="card">
+    <h2>➕ Ajouter un document</h2>
+    <select id="docCategory">
+      <option>✈️ Billet d’avion</option>
+      <option>🪪 Carte d’identité</option>
+      <option>🚗 Permis de conduire</option>
+      <option>🏠 Location / logement</option>
+      <option>⛴️ Ferry / excursion</option>
+      <option>🎫 Réservation / billet</option>
+      <option>🧾 Assurance / assistance</option>
+      <option>📄 Autre</option>
+    </select>
+    <button class="scanBtn" id="startCardScan" type="button">🪪 Scanner une carte recto / verso</button>
+    <div id="cardScanBox" class="hidden" style="margin-top:12px">
+      <p><b>Étape 1/2 — Recto</b></p>
+      <label class="scanBtn">📷 Photographier le recto<input id="cardFrontInput" type="file" accept="image/*" capture="environment" hidden></label>
+      <div id="frontStatus" class="meta">Recto non photographié.</div>
+      <p><b>Étape 2/2 — Verso</b></p>
+      <label class="scanBtn">📷 Photographier le verso<input id="cardBackInput" type="file" accept="image/*" capture="environment" hidden></label>
+      <div id="backStatus" class="meta">Verso non photographié.</div>
+      <button class="primary wide" id="saveCardScan" type="button" disabled>🔐 Enregistrer recto + verso</button>
+      <button class="ghost wide" id="cancelCardScan" type="button">Annuler</button>
+      <p class="meta">Les deux faces sont regroupées en un seul document chiffré. Rien n’est envoyé sur Internet.</p>
+    </div>
+    <label class="scanBtn">📷 Photographier un document simple
+      <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden>
+    </label>
+    <label class="scanBtn secondaryScan">📁 Choisir photo ou PDF
+      <input id="fileInput" type="file" accept="image/*,application/pdf" hidden>
+    </label>
+    <p class="meta">Sur iPhone, les boutons photo ouvrent directement l’appareil photo. Pour une carte, utilisez le scanner recto / verso.</p>
+  </div>
+
+  <div class="card">
+    <div class="titleRow"><h2>Mes documents</h2><button class="ghost" id="refreshDocs">Actualiser</button></div>
+    <div id="docsList"><p class="meta">Aucun document.</p></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>📝 Carnet</h2>
+  <textarea id="notes" rows="10" placeholder="Réservations, horaires, restaurants, numéros utiles…"></textarea>
+  <button class="primary wide" id="saveNotes">Enregistrer</button>
+</div>
+</section>
+
+<section id="settings" class="tab">
+<div class="sectionHead"><h1>Notre voyage</h1><p>Enregistrez vos logements : ils pilotent les secteurs, les trajets et les propositions de visites.</p></div>
+<div class="card"><h2>🏠 Base utilisée pour les essais</h2><select id="homeOverride"><option value="auto">Automatique selon la date</option></select><p class="meta">Avant le départ, choisissez une base pour simuler les journées. Pendant le voyage, laissez « Automatique ».</p></div>
+<div id="homes"></div>
+<div class="card"><h2>🚗 Navigation</h2><p>Choisissez l’application utilisée pour les trajets routiers. Les randonnées restent sur la carte IGN.</p><select id="navPreference"><option value="ask">Toujours demander</option><option value="google">Google Maps</option><option value="waze">Waze</option></select><p class="meta">Pour un parcours avec plusieurs étapes, Google Maps peut afficher tout l’itinéraire. Avec Waze, le compagnon vous guide étape par étape.</p></div>
+<div class="card updateCard"><div class="titleRow"><h2>🔄 Mise à jour</h2><span class="versionBadge"><span data-app-version>v0.5.9</span></span></div><p id="updateText">L’application vérifie automatiquement les nouvelles versions.</p><button id="checkUpdate" class="ghost wide">Vérifier maintenant</button></div>
+<div class="card"><h2>🔔 Notifications</h2><p>Autorisez-les pour les alertes utiles pendant que l’application est utilisée. Les notifications push en arrière-plan seront la prochaine étape.</p><button id="notify" class="primary">Autoriser les notifications</button></div>
+<div class="card"><h2>Règles de l’assistant</h2><p>✓ Le programme choisi reste prioritaire.<br>✓ Aucune visite n’est remplacée sans votre accord.<br>✓ En cas de retard : continuer, reporter ou voir une alternative.<br>✓ Une visite reportée n’est jamais supprimée.<br>✓ Les 💎 sont rares et réservées aux vraies pépites.<br>✓ Une visite terminée passe dans l’historique : elle est grisée ou masquée, jamais perdue.<br>✓ Les propositions restent dans le secteur du logement actif.<br>✓ La météo aide à choisir le type de journée sans traverser l’île.<br>✓ Par défaut : 1 activité principale + 1 complément proche maximum.</p></div>
+</section>
+</main>
+<div id="ignMapModal" class="mapModal hidden"><div class="mapSheet"><div class="titleRow"><h2 id="ignMapTitle">🗺️ Carte IGN</h2><button id="closeIgnMap" class="ghost">Fermer</button></div><div id="ignMap"></div><div id="ignMapFallback" class="hidden adviceResult">La carte IGN nécessite une connexion internet.</div><button id="ignUseGps" class="primary wide">📍 Me localiser sur la carte</button><button id="ignLiveTrack" class="ghost wide">🎯 Suivre ma position en direct</button><p id="ignLiveStatus" class="meta"></p><p class="meta">Fond Plan IGN officiel · © IGN / Géoplateforme. Pour les promenades découvertes en ligne, le tracé provient d’OpenStreetMap. Le temps n’est affiché que lorsqu’une source le fournit.</p></div></div><div id="modal" class="modal hidden"><div class="modalBox"><h2 id="modalTitle"></h2><p id="modalText"></p><div id="modalActions"></div><button class="ghost wide" id="closeModal">Fermer</button></div></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script src="/data.js?v=053"></script><script src="/app.js?v=053"></script></body></html>
