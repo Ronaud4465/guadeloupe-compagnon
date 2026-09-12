@@ -158,8 +158,13 @@ async function fetchOverpass(query){
 
 async function discoverNearbyHikes(pos){
  const el=document.getElementById("nearHikeList"),status=document.getElementById("nearHikeStatus");
+ if(pos.accuracy && pos.accuracy>5000){
+   status.textContent=`Position trop approximative · ±${Math.round(pos.accuracy/1000)} km`;
+   el.innerHTML=`<div class="card"><p>⚠️ La position fournie par le téléphone est trop approximative pour chercher des promenades autour de vous.</p><p class="meta">Précision actuelle : environ ±${Math.round(pos.accuracy/1000)} km. Active la localisation précise pour ce site dans le navigateur/iPhone, puis relance la recherche.</p></div>`;
+   return;
+ }
  if(!el)return;
- status.textContent="Recherche des promenades…";
+ status.textContent=`Recherche à ${nearHikeRadius} km · GPS ±${pos.accuracy||"?"} m`;
  el.innerHTML='<div class="card"><p>🔎 Recherche d’itinéraires pédestres publics autour de votre position…</p><p class="meta">Plusieurs serveurs sont essayés automatiquement. Les durées et difficultés ne sont jamais inventées.</p></div>';
 
  const radius=Math.round(nearHikeRadius*1000);
@@ -212,7 +217,13 @@ async function discoverNearbyHikes(pos){
 }
 function setupNearbyHikes(){
  const btn=document.getElementById('nearHikesBtn'); if(btn)btn.onclick=()=>locate(pos=>discoverNearbyHikes(pos));
- document.querySelectorAll('.hikeRadius').forEach(b=>b.onclick=()=>{nearHikeRadius=+b.dataset.radius;document.querySelectorAll('.hikeRadius').forEach(x=>x.classList.toggle('active',x===b));});
+ document.querySelectorAll('.hikeRadius').forEach(b=>b.onclick=()=>{
+   nearHikeRadius=+b.dataset.radius;
+   document.querySelectorAll('.hikeRadius').forEach(x=>x.classList.toggle('active',x===b));
+   const status=document.getElementById('nearHikeStatus');
+   if(status)status.textContent=`Rayon choisi : ${nearHikeRadius} km · nouvelle recherche…`;
+   locate(pos=>discoverNearbyHikes(pos));
+ });
 }
 function hikeInline(p){const h=HIKES[p.id];return `<div class="hikeBox"><b>🥾 Promenade / randonnée</b><div>${h.distance} · ${h.duration} · ${h.difficulty}</div><small>${h.note}</small>${h.source?`<div class="sourceTag">Source : ${h.source}</div>`:''}<div class="placeBtns"><button class="ignBtn" onclick="openIgnMap('${p.id}')">🗺️ Carte IGN</button><button class="ghost" onclick="navigateTo('${p.lat},${p.lng}')">🚗 Parking / départ</button></div></div>`}
 function renderHikes(){
@@ -269,7 +280,7 @@ function locate(cb){
      if(cb)cb(S.pos);
    },
    e=>{let m=gpsMessage(e);setGps(m,false);openModal("Diagnostic GPS",m)},
-   {enableHighAccuracy:false,timeout:20000,maximumAge:60000}
+   {enableHighAccuracy:true,timeout:25000,maximumAge:0}
  );
 }
 document.getElementById("locate").onclick=()=>locate(()=>openModal("GPS actif","Votre position est maintenant accessible à Guadeloupe 2027."));
@@ -549,7 +560,7 @@ window.addEventListener("load",()=>{
 });
 
 /* ===== V0.3.4 : IGN + journée intelligente + historique ===== */
-const APP_VERSION = "0.4.8";
+const APP_VERSION = "0.4.9";
 let swRegistration = null;
 let refreshingForUpdate = false;
 
