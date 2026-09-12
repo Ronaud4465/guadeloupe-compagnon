@@ -1,12 +1,14 @@
-# Guadeloupe Compagnon v0.4.3
+# Guadeloupe Compagnon v0.4.4
 
-Mise à jour des fiches randonnée : durée, distance et difficulté uniquement lorsqu’une source identifiable est disponible.
+Ajout principal : vraie découverte de promenades autour de la position GPS, y compris pour tester en Belgique.
 
-- Soufrière : 4 h 30, 6 km A/R — Rando Guadeloupe / Parc national
-- Chutes du Carbet : durées distinctes selon la chute — Parc national
-- Boucle Sofaïa / Trois Cornes : 2 h, 3,2 km — Rando Guadeloupe
-- Cascade aux Écrevisses : 30 min, 415 m — Rando Guadeloupe
-- Cascade Paradis : 2–3 h, env. 5 km — source guide local
-- Route de la Traversée : aucune durée globale inventée ; « durée non renseignée » tant qu’un sentier précis n’est pas choisi.
+- Recherche en ligne d’itinéraires pédestres publics OpenStreetMap dans 2 / 5 / 10 / 20 km.
+- Distance GPS entre l’utilisateur et l’itinéraire.
+- Durée, distance du parcours et difficulté uniquement si la source les fournit.
+- Sinon affichage explicite « non renseignée ».
+- Ouverture du lieu sur fond Plan IGN.
+- Navigation vers la proximité du parcours.
+- Les randonnées Guadeloupe vérifiées de la v0.4.3 sont conservées.
+- Aucune durée de randonnée n’est inventée.
 
-Le rayon 2/5/10/20 km reste distinct de la durée de marche.
+Note : la découverte nécessite Internet. La présence d’un itinéraire dépend de la qualité des données publiques OpenStreetMap à l’endroit recherché.

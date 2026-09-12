@@ -116,15 +116,66 @@ function renderNearbyHikes(pos){
  if(!rows.length){el.innerHTML=`<div class="card"><p>Aucune promenade de notre sélection dans un rayon de ${nearHikeRadius} km.</p><p class="meta">Augmentez le rayon ou utilisez la recherche libre. La base de promenades sera enrichie au fur et à mesure.</p></div>`;return;}
  el.innerHTML=rows.map(p=>{const h=HIKES[p.id], mins=approxDriveMinutes(p.nearKm);return `<div class="card nearbyHike ${isDone(p.id)?'completedPlace':''}"><div class="titleRow"><h2>${isDone(p.id)?'✓ ':''}🥾 ${p.name}</h2><span class="distanceBadge">${p.nearKm<1?Math.round(p.nearKm*1000)+' m':p.nearKm.toFixed(1)+' km'}</span></div><p><b>🚗 env. ${mins} min jusqu’au départ</b> · estimation</p><div class="meta">${h.distance} · ${h.duration} · ${h.difficulty}</div><p>${h.note}</p>${h.source?`<div class="sourceTag">Source : ${h.source}</div>`:''}<div class="placeBtns"><button class="ignBtn" onclick="openIgnMap('${p.id}')">🗺️ Voir sur IGN</button><button class="primary" onclick="navigateTo('${p.lat},${p.lng}')">🚗 Aller au départ</button>${isDone(p.id)?`<button class="ghost" onclick="restorePlace('${p.id}')">↻ Refaire</button>`:`<button class="ghost" onclick="toggleDay('${p.id}')">+ Ajouter aujourd’hui</button>`}</div></div>`}).join('');
 }
+function escHtml(v){return String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));}
+function osmDifficulty(tags){
+ const s=tags.sac_scale||"";
+ const map={hiking:"Randonnée",mountain_hiking:"Randonnée montagne",demanding_mountain_hiking:"Montagne exigeante",alpine_hiking:"Alpin",demanding_alpine_hiking:"Alpin exigeant",difficult_alpine_hiking:"Alpin difficile"};
+ return map[s]||"Difficulté non renseignée";
+}
+function osmDuration(tags){
+ const d=tags.duration||tags.time||tags["roundtrip:duration"];
+ return d?`Durée indiquée : ${escHtml(d)}`:"Durée non renseignée";
+}
+function osmDistance(tags){
+ const d=tags.distance||tags.length;
+ return d?`Distance indiquée : ${escHtml(d)}`:"Distance du parcours non renseignée";
+}
+async function discoverNearbyHikes(pos){
+ const el=document.getElementById("nearHikeList"),status=document.getElementById("nearHikeStatus");if(!el)return;
+ status.textContent="Recherche de promenades réelles…";
+ el.innerHTML='<div class="card"><p>🔎 Recherche des itinéraires pédestres publics autour de votre position…</p><p class="meta">Les durées et difficultés ne seront affichées que si elles sont réellement renseignées dans la source.</p></div>';
+ const radius=Math.round(nearHikeRadius*1000);
+ const q=`[out:json][timeout:20];(relation(around:${radius},${pos.lat},${pos.lng})["route"~"^(hiking|foot|walking)$"];);out center tags;`;
+ try{
+  const r=await fetch("https://overpass-api.de/api/interpreter",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded;charset=UTF-8"},body:"data="+encodeURIComponent(q)});
+  if(!r.ok)throw new Error("service indisponible");
+  const data=await r.json();
+  const seen=new Set();
+  const rows=(data.elements||[]).map(x=>{
+   const t=x.tags||{},lat=x.center?.lat, lng=x.center?.lon;
+   if(!lat||!lng)return null;
+   const name=t.name||t.ref||"Itinéraire pédestre sans nom";
+   const key=(name+"|"+lat.toFixed(3)+"|"+lng.toFixed(3)).toLowerCase();if(seen.has(key))return null;seen.add(key);
+   return {name,lat,lng,t,nearKm:km(pos,{lat,lng})};
+  }).filter(Boolean).filter(x=>x.nearKm<=nearHikeRadius*1.15).sort((a,b)=>a.nearKm-b.nearKm).slice(0,20);
+  status.textContent=`${rows.length} itinéraire${rows.length>1?"s":""} public${rows.length>1?"s":""} trouvé${rows.length>1?"s":""}`;
+  if(!rows.length){el.innerHTML=`<div class="card"><p>Aucun itinéraire pédestre public référencé n’a été trouvé dans ${nearHikeRadius} km.</p><p class="meta">Cela ne signifie pas qu’il n’existe aucune promenade : seulement qu’aucun itinéraire exploitable n’est référencé par la source dans ce rayon.</p></div>`;return;}
+  el.innerHTML=rows.map(x=>`<div class="card nearbyHike"><div class="titleRow"><h2>🥾 ${escHtml(x.name)}</h2><span class="distanceBadge">${x.nearKm<1?Math.round(x.nearKm*1000)+" m":x.nearKm.toFixed(1)+" km"}</span></div><div class="meta">${osmDistance(x.t)} · ${osmDuration(x.t)} · ${osmDifficulty(x.t)}</div>${x.t.description?`<p>${escHtml(x.t.description)}</p>`:""}<div class="sourceTag">Source : OpenStreetMap · données contributives</div><div class="placeBtns"><button class="ignBtn" onclick='openIgnCoords(${JSON.stringify(x.name)},${x.lat},${x.lng})'>🗺️ Voir sur IGN</button><button class="primary" onclick="navigateTo('${x.lat},${x.lng}')">🚗 Aller à proximité</button></div></div>`).join("");
+ }catch(e){
+  status.textContent="Recherche indisponible";
+  el.innerHTML='<div class="card"><p>La recherche en ligne des promenades est momentanément indisponible.</p><p class="meta">Vos randonnées Guadeloupe enregistrées restent accessibles plus bas. Réessayez avec une connexion Internet.</p></div>';
+ }
+}
 function setupNearbyHikes(){
- const btn=document.getElementById('nearHikesBtn'); if(btn)btn.onclick=()=>locate(pos=>renderNearbyHikes(pos));
- document.querySelectorAll('.hikeRadius').forEach(b=>b.onclick=()=>{nearHikeRadius=+b.dataset.radius;document.querySelectorAll('.hikeRadius').forEach(x=>x.classList.toggle('active',x===b));if(S.pos)renderNearbyHikes(S.pos)});
+ const btn=document.getElementById('nearHikesBtn'); if(btn)btn.onclick=()=>locate(pos=>discoverNearbyHikes(pos));
+ document.querySelectorAll('.hikeRadius').forEach(b=>b.onclick=()=>{nearHikeRadius=+b.dataset.radius;document.querySelectorAll('.hikeRadius').forEach(x=>x.classList.toggle('active',x===b));});
 }
 function hikeInline(p){const h=HIKES[p.id];return `<div class="hikeBox"><b>🥾 Promenade / randonnée</b><div>${h.distance} · ${h.duration} · ${h.difficulty}</div><small>${h.note}</small>${h.source?`<div class="sourceTag">Source : ${h.source}</div>`:''}<div class="placeBtns"><button class="ignBtn" onclick="openIgnMap('${p.id}')">🗺️ Carte IGN</button><button class="ghost" onclick="navigateTo('${p.lat},${p.lng}')">🚗 Parking / départ</button></div></div>`}
 function renderHikes(){
  const el=document.getElementById('hikeList'); if(!el)return;
  el.innerHTML=Object.keys(HIKES).map(id=>all().find(p=>p.id===id)).filter(Boolean).map(p=>`<div class="card ${isDone(p.id)?'completedPlace':''}"><div class="titleRow"><h2>${isDone(p.id)?'✓ ':''}🥾 ${p.name}</h2>${isDone(p.id)?'<span class="doneBadge">FAIT</span>':''}</div>${hikeInline(p)}${!isDone(p.id)?`<button class="doneBtn wide" onclick="markDone('${p.id}')">✓ Marquer comme fait</button>`:`<button class="ghost wide" onclick="restorePlace('${p.id}')">↩ Remettre à visiter</button>`}</div>`).join('');
 }
+window.openIgnCoords=function(name,lat,lng){
+ document.getElementById('ignMapTitle').textContent=`🗺️ IGN · ${name}`;
+ document.getElementById('ignMapModal').classList.remove('hidden');
+ setTimeout(()=>{
+  if(!window.L){document.getElementById('ignMapFallback').classList.remove('hidden');return;}
+  if(ignMap){ignMap.remove();ignMap=null;}
+  ignMap=L.map('ignMap',{zoomControl:true}).setView([lat,lng],14);
+  L.tileLayer('https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/png',{maxZoom:18,attribution:'IGN · Géoplateforme'}).addTo(ignMap);
+  ignMarker=L.marker([lat,lng]).addTo(ignMap).bindPopup(name).openPopup();
+ },120);
+};
 window.openIgnMap=function(id){
  const p=all().find(x=>x.id===id); if(!p||!p.lat)return;
  document.getElementById('ignMapTitle').textContent=`🗺️ IGN · ${p.name}`;
