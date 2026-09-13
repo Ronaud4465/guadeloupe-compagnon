@@ -59,6 +59,7 @@ for (const el of raw.elements || []) {
   minLon = Math.min(minLon, el.bounds.minlon); maxLon = Math.max(maxLon, el.bounds.maxlon);
 
   relations.push({
+    type: "relation", // requis par collectRelationLines côté app.js (attend le même format qu'une vraie réponse Overpass) — son absence faisait échouer "PARCOURS + TEMPS" pour toutes les promenades statiques
     id: el.id,
     tags: el.tags,
     bounds: el.bounds,

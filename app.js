@@ -482,6 +482,12 @@ function loadStaticZoneData(zone){
 // Construit les lignes affichées à partir d'éléments Overpass "relation" (avec members[].geometry),
 // qu'ils viennent d'un appel réseau en direct ou d'un fichier statique pré-téléchargé — même forme
 // de données dans les deux cas, donc même traitement.
+// id -> élément "relation" (avec members[].geometry déjà téléchargée, via recherche statique
+// hors-ligne ou réponse Overpass en direct). Réutilisé par "PARCOURS + TEMPS" pour éviter un 2e
+// appel réseau — sans quoi le mode hors-ligne ne serait qu'à moitié hors-ligne, et une zone en
+// direct referait un appel redondant à des données déjà en main.
+const hikeGeometryCache=new Map();
+
 function buildHikeRows(elements,pos){
  const seen=new Set();
  return (elements||[]).map(x=>{
@@ -490,6 +496,7 @@ function buildHikeRows(elements,pos){
   const capped={...x,members:cappedMembers};
   const rp=representativeRoutePoint(pos,capped);
   if(!rp)return null;
+  hikeGeometryCache.set(x.id,capped);
   const routeMeters=nearestRouteMeters(pos,capped);
   const nearKm=routeMeters/1000;
   const name=t.name||t.ref||"Itinéraire pédestre sans nom";
@@ -768,9 +775,20 @@ window.openOsmHikeRoute=async function(relId,name,lat,lng,durationTag,distanceTa
  fallback.innerHTML='🔎 Chargement du tracé de la promenade…';
 
  try{
-  const q=`[out:json][timeout:25];relation(${relId})->.r;(.r;way(r););out geom;`;
-  const result=await fetchOverpass(q,Date.now()+HIKE_SEARCH_TOTAL_BUDGET_MS,msg=>{fallback.innerHTML=`🔎 ${escHtml(msg)}`;});
-  const lines=collectRelationLines(result.data);
+  // La géométrie a déjà été téléchargée pendant la recherche (fichier statique hors-ligne ou
+  // réponse Overpass en direct) : on la réutilise directement plutôt que de refaire un appel
+  // réseau qui échouerait pour les mêmes raisons qu'on cherche justement à éviter (fiabilité des
+  // miroirs Overpass), et qui romprait le mode hors-ligne pour les zones pré-téléchargées.
+  const cached=hikeGeometryCache.get(relId);
+  let data;
+  if(cached){
+   data={elements:[cached]};
+  }else{
+   const q=`[out:json][timeout:25];relation(${relId})->.r;(.r;way(r););out geom;`;
+   const result=await fetchOverpass(q,Date.now()+HIKE_SEARCH_TOTAL_BUDGET_MS,msg=>{fallback.innerHTML=`🔎 ${escHtml(msg)}`;});
+   data=result.data;
+  }
+  const lines=collectRelationLines(data);
   if(!lines.length)throw new Error("Tracé non disponible");
   currentHikeLines=lines;
 
@@ -1159,7 +1177,7 @@ window.addEventListener("load",()=>{
 });
 
 /* ===== V0.3.4 : IGN + journée intelligente + historique ===== */
-const APP_VERSION = "0.5.13";
+const APP_VERSION = "0.5.14";
 let swRegistration = null;
 let refreshingForUpdate = false;
 

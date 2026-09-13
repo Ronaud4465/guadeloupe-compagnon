@@ -1,4 +1,40 @@
-# Guadeloupe Compagnon v0.5.13
+# Guadeloupe Compagnon v0.5.14
+
+## v0.5.14 — "PARCOURS + TEMPS" refaisait un appel réseau (cassait le hors-ligne, et échouait pour toutes les promenades statiques)
+
+Après la v0.5.13, la recherche fonctionnait instantanément hors-ligne en Wallonie, mais ouvrir
+« PARCOURS + TEMPS » sur n'importe quelle promenade échouait systématiquement avec « géométrie
+non exploitable ». Deux causes distinctes, trouvées en testant avec un vrai Chromium :
+
+**1. `openOsmHikeRoute` refaisait toujours un appel réseau live à Overpass**, qu'il s'agisse
+d'une promenade venant du fichier statique ou de la recherche en direct — alors que la géométrie
+complète est déjà en main dans les deux cas (déjà téléchargée par la recherche elle-même). Ça
+recréait exactement la dépendance aux miroirs Overpass que le mode hors-ligne devait éliminer :
+testé en direct sur production, cet appel enchaînait 6 tentatives (2 miroirs directs × 2 essais +
+2 essais sur le repli serveur), toutes en échec, avant d'abandonner après ~21s.
+
+  Correctif : `buildHikeRows` alimente maintenant un cache (`hikeGeometryCache`, id → élément
+  avec géométrie déjà téléchargée) à chaque recherche, statique ou en direct. `openOsmHikeRoute`
+  consulte d'abord ce cache et ne retombe sur un appel réseau que si l'entrée est absente. Effet
+  de bord positif : le chargement du tracé devient aussi instantané pour les résultats de la
+  recherche en direct (plus de second aller-retour réseau redondant).
+
+**2. Une fois le cache en place, le tracé restait vide malgré une géométrie bien présente** :
+`collectRelationLines` (côté app.js) n'accepte les membres d'une relation que si
+`el.type==="relation"` — un champ que `scripts/build-hikes-static.js` omettait dans les objets
+stockés (`id`, `tags`, `bounds`, `members`, mais pas `type`). Les vraies réponses Overpass en
+direct ont toujours ce champ, d'où un fonctionnement correct pour les recherches en direct mais
+un échec silencieux pour 100 % des promenades issues d'un fichier statique — confirmant le point
+3 du signalement (différence de format entre les deux sources).
+
+  Correctif : `type: "relation"` ajouté aux objets générés par `build-hikes-static.js`. Les deux
+  fichiers statiques (`hikes-data-wallonie.js`, `hikes-data-guadeloupe.js`) ont été régénérés à
+  partir des dumps Overpass déjà téléchargés (pas besoin de retélécharger depuis OSM).
+
+**Testé** (Chromium réel, serveur local, sur la vraie promenade signalée) : recherche à Liège →
+clic sur « PARCOURS + TEMPS » de « GR 57 Liaison Barchon » → tracé chargé en ~124ms, **0 appel
+réseau**, « Tracé chargé : 112 segments », tracé effectivement rendu sur la carte. Avant ce
+correctif, le même test échouait après ~21s d'appels réseau infructueux.
 
 ## v0.5.13 — données de promenades pré-téléchargées pour la Guadeloupe et la Wallonie (recherche hors-ligne)
 
