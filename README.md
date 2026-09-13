@@ -1,4 +1,87 @@
-# Guadeloupe Compagnon v0.5.12
+# Guadeloupe Compagnon v0.5.13
+
+## v0.5.13 — données de promenades pré-téléchargées pour la Guadeloupe et la Wallonie (recherche hors-ligne)
+
+Objectif : pouvoir tester la recherche "promenades autour de moi" en Belgique/Wallonie avant le
+départ, dans des conditions représentatives de ce qui sera vécu en Guadeloupe (recherche
+instantanée, sans dépendre de la disponibilité des miroirs Overpass publics) — et une fois sur
+place, ne plus du tout dépendre d'eux pour la zone réellement utilisée.
+
+**Estimation avant téléchargement** (comptages réels via une requête Overpass légère `out
+count;`) :
+- Guadeloupe entière : 45 itinéraires — négligeable.
+- Wallonie entière : 4174 itinéraires (5 exclus `type=network`/`superroute`) — 92 % sont de
+  petites promenades ponctuelles (<5 km de diagonale de bounding box), ~172 sont de grands
+  itinéraires nationaux/internationaux (GR, pèlerinages), dont certains énormes (le GR 128
+  Vlaanderenroute à lui seul : 21 073 points de géométrie).
+- Belgique entière (21 490 itinéraires, 5× la Wallonie) écartée : clairement disproportionné par
+  rapport à l'usage réel (tests depuis la région liégeoise/wallonne).
+
+Sans plafond, la géométrie complète de la Wallonie pèserait ~85 Mo (mesuré sur un échantillon
+représentatif de 123 itinéraires puis extrapolé). Avec un **plafond de 1000 points de géométrie
+par itinéraire** (même logique que `capRouteMembers` côté recherche en direct, mais sans le tri
+par proximité puisqu'il n'y a pas de position de référence au moment de la génération) : 156
+itinéraires sur 4174 (3,7 %) sont tronqués, pour un fichier de 37,4 Mo bruts. Ces données JSON
+(coordonnées très répétitives) compressent très bien : **4,16 Mo réels en Brotli** (déjà activé
+par défaut sur Vercel), mesuré directement, pas juste estimé. Le fichier n'est téléchargé qu'une
+seule fois puis mis en cache par le service worker existant — pas à chaque recherche.
+
+**Fonctionnement** : `HIKE_STATIC_ZONES` (dans `app.js`) définit, pour chaque zone couverte, sa
+bounding box **administrative réelle** (PAS déduite des itinéraires eux-mêmes — un GR qui
+traverse la Wallonie vers la France/l'Allemagne a un bounding box qui déborde largement de la
+vraie région, ce qui fausserait la détection de zone). `discoverNearbyHikes` vérifie d'abord si
+la position GPS de l'utilisateur tombe dans une zone couverte :
+- **oui** → chargement paresseux du fichier statique correspondant (`<script>` injecté
+  dynamiquement, mis en cache par le service worker après le premier chargement), recherche
+  instantanée, aucun appel réseau à Overpass ;
+- **non** (n'importe où ailleurs dans le monde) → pipeline actuel inchangé (Overpass en direct
+  depuis le navigateur, retries, repli serveur).
+
+La construction des lignes affichées (`buildHikeRows`) et leur rendu (`renderHikeRows`) sont
+maintenant partagés entre les deux chemins (statique et en direct) — même logique, même format
+de données en entrée (forme `relation` d'Overpass avec `members[].geometry`), donc aucune
+différence de comportement visible pour l'utilisateur entre une zone couverte et une zone non
+couverte, à part la vitesse.
+
+**Testé** (Chromium réel, serveur local) :
+- Position à Liège (dans la bbox Wallonie) → "Recherche instantanée (données hors-ligne :
+  Wallonie)…" affiché immédiatement, un seul chargement réseau (`hikes-data-wallonie.js`, pas
+  d'appel à Overpass), résultat correct (ex. "GR 57 Liaison Barchon" à 392 m, cohérent avec les
+  tests en direct précédents sur ce même point).
+- Position à Paris (hors des deux zones) → pipeline Overpass en direct inchangé, comme avant
+  cette version (aucune régression).
+
+### Régénérer les données de promenades statiques
+
+Si OpenStreetMap est mis à jour, ou pour ajouter une nouvelle zone :
+
+1. Récupérer le dump brut Overpass pour la zone (adapter la clause `area[...]`) :
+   ```
+   curl -X POST https://overpass-api.de/api/interpreter \
+     -H "Content-Type: application/x-www-form-urlencoded;charset=UTF-8" \
+     --data-urlencode 'data=[out:json][timeout:180];area["name"="Wallonie"]["admin_level"="4"]->.a;relation(area.a)["route"~"^(hiking|foot|walking)$"];out geom;' \
+     -o wallonie-raw.json
+   ```
+   Pour la Guadeloupe, remplacer la clause `area` par `area["ISO3166-1"="GP"]->.a;`.
+
+2. Retrouver la bbox **administrative réelle** de la zone (à ne jamais déduire des itinéraires) :
+   ```
+   curl -X POST https://overpass-api.de/api/interpreter \
+     -H "Content-Type: application/x-www-form-urlencoded;charset=UTF-8" \
+     --data-urlencode 'data=[out:json];relation["name"="<NomDeLaRégion>"]["admin_level"="4"];out bb;'
+   ```
+
+3. Construire le fichier statique :
+   ```
+   node scripts/build-hikes-static.js wallonie-raw.json hikes-data-wallonie.js HIKES_STATIC_WALLONIE 1000 "49.4969821,2.8420347,50.8121222,6.4080970"
+   node scripts/build-hikes-static.js guadeloupe-raw.json hikes-data-guadeloupe.js HIKES_STATIC_GUADELOUPE 4000 "15.8319758,-61.8097640,16.5144801,-61.0013039"
+   ```
+   4e argument : plafond de points de géométrie par itinéraire. 5e argument (optionnel) : bbox
+   `minLat,minLon,maxLat,maxLon` de l'étape 2 — si omis, le script déduit une bbox des itinéraires
+   eux-mêmes et affiche un avertissement (à éviter pour une zone traversée par de grands GR).
+
+4. Pour une **nouvelle** zone (pas juste une mise à jour), ajouter une entrée dans
+   `HIKE_STATIC_ZONES` (`app.js`) avec le nom, le chemin du fichier, le nom de variable et la bbox.
 
 ## v0.5.12 — retour visuel progressif pendant les tentatives, et vérification du signalement v0.5.11
 

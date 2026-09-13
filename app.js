@@ -452,6 +452,85 @@ function capRouteMembers(members,maxPoints,pos){
  return {members:capped,truncated};
 }
 
+// Zones couvertes par un fichier statique pré-téléchargé (voir scripts/build-hikes-static.js et
+// README.md "Régénérer les données de promenades statiques") : recherche instantanée, sans
+// aucun appel réseau, pour les régions déjà connues. La bbox de chaque zone est la vraie
+// étendue administrative de la région (PAS déduite des itinéraires eux-mêmes : un GR qui la
+// traverse peut déborder largement à l'étranger et fausserait la détection).
+const HIKE_STATIC_ZONES=[
+ {name:"Guadeloupe",file:"/hikes-data-guadeloupe.js",varName:"HIKES_STATIC_GUADELOUPE",bbox:{minLat:15.8319758,minLon:-61.8097640,maxLat:16.5144801,maxLon:-61.0013039}},
+ {name:"Wallonie",file:"/hikes-data-wallonie.js",varName:"HIKES_STATIC_WALLONIE",bbox:{minLat:49.4969821,minLon:2.8420347,maxLat:50.8121222,maxLon:6.4080970}}
+];
+function findStaticZoneForPos(pos){
+ return HIKE_STATIC_ZONES.find(z=>pos.lat>=z.bbox.minLat&&pos.lat<=z.bbox.maxLat&&pos.lng>=z.bbox.minLon&&pos.lng<=z.bbox.maxLon)||null;
+}
+const loadedStaticZoneData={};
+function loadStaticZoneData(zone){
+ if(!loadedStaticZoneData[zone.varName]){
+  loadedStaticZoneData[zone.varName]=new Promise((resolve,reject)=>{
+   if(window[zone.varName]){resolve(window[zone.varName]);return;}
+   const s=document.createElement("script");
+   s.src=zone.file;
+   s.onload=()=>window[zone.varName]?resolve(window[zone.varName]):reject(new Error("Fichier de données hors-ligne invalide"));
+   s.onerror=()=>reject(new Error("Impossible de charger les données hors-ligne de "+zone.name));
+   document.head.appendChild(s);
+  });
+ }
+ return loadedStaticZoneData[zone.varName];
+}
+
+// Construit les lignes affichées à partir d'éléments Overpass "relation" (avec members[].geometry),
+// qu'ils viennent d'un appel réseau en direct ou d'un fichier statique pré-téléchargé — même forme
+// de données dans les deux cas, donc même traitement.
+function buildHikeRows(elements,pos){
+ const seen=new Set();
+ return (elements||[]).map(x=>{
+  const t=x.tags||{};
+  const {members:cappedMembers,truncated}=capRouteMembers(x.members,HIKE_MAX_GEOMETRY_POINTS,pos);
+  const capped={...x,members:cappedMembers};
+  const rp=representativeRoutePoint(pos,capped);
+  if(!rp)return null;
+  const routeMeters=nearestRouteMeters(pos,capped);
+  const nearKm=routeMeters/1000;
+  const name=t.name||t.ref||"Itinéraire pédestre sans nom";
+  const key=(x.id+"|"+name).toLowerCase();
+  if(seen.has(key))return null;
+  seen.add(key);
+  // Longueur totale : on préfère la distance déclarée par la source (tag distance/length),
+  // plus fiable que la somme de la géométrie téléchargée qui peut être tronquée par le plafond
+  // de points ci-dessus. Si c'est très long, ce n'est pas "une promenade" ponctuelle mais un
+  // itinéraire de grande randonnée — on le signale au lieu de le faire passer pour une balade.
+  const declaredKm=parseFloat(t.distance||t.length);
+  const computedKm=sumLineMeters(routeGeometryGroups(capped))/1000;
+  const totalKm=Number.isFinite(declaredKm)?declaredKm:computedKm;
+  const extended=truncated||totalKm>25;
+  return {id:x.id,name,lat:rp.lat,lng:rp.lng,t,nearKm,totalKm,extended};
+ }).filter(Boolean)
+   .filter(x=>x.nearKm<=nearHikeRadius)
+   .sort((a,b)=>a.nearKm-b.nearKm)
+   .slice(0,25);
+}
+function renderHikeRows(rows,status,el){
+ if(!rows.length){
+  status.textContent="Aucune promenade référencée dans ce rayon";
+  el.innerHTML=`<div class="card"><p>Aucun itinéraire pédestre public référencé n’a été trouvé dans un rayon de ${nearHikeRadius} km.</p><p class="meta">Cela ne veut pas dire qu’il n’existe aucune promenade à proximité : seulement qu’aucun itinéraire exploitable n’est référencé par la source dans ce rayon. Essaie 10 ou 20 km.</p></div>`;
+  return;
+ }
+ status.textContent=`${rows.length} promenade${rows.length>1?"s":""} trouvée${rows.length>1?"s":""}`;
+ el.innerHTML=rows.map(x=>`<div class="card nearbyHike">
+   <div class="titleRow"><h2>🥾 ${escHtml(x.name)}</h2><span class="distanceBadge">à ${x.nearKm<1?Math.round(x.nearKm*1000)+" m":x.nearKm.toFixed(1)+" km"} du tracé</span></div>
+   <div class="meta">${osmDistance(x.t)} · ${osmDuration(x.t)} · ${osmDifficulty(x.t)}</div>
+   ${x.extended?`<p class="meta">⚠️ Itinéraire étendu (≈ ${Math.round(x.totalKm)} km au total référencés) : seul un point du tracé est à ${x.nearKm.toFixed(1)} km, le reste peut être bien plus loin. Ouvrez « PARCOURS + TEMPS » pour voir la portion réelle proche de vous.</p>`:""}
+   ${x.t.description?`<p>${escHtml(x.t.description)}</p>`:""}
+   <div class="sourceTag">Source : OpenStreetMap · données contributives</div>
+   <div class="placeBtns">
+     <button class="ignBtn" onclick='openOsmHikeRoute(${x.id},${JSON.stringify(x.name)},${x.lat},${x.lng},${JSON.stringify(x.t.duration||"")},${JSON.stringify(x.t.distance||"")})'>🥾 PARCOURS + TEMPS</button>
+     <button class="ghost" onclick='openIgnCoords(${JSON.stringify(x.name)},${x.lat},${x.lng})'>🗺️ Point sur IGN</button>
+     <button class="primary" onclick="navigateTo('${x.lat},${x.lng}')">🚗 Aller au départ</button>
+   </div>
+ </div>`).join("");
+}
+
 async function discoverNearbyHikes(pos){
  const el=document.getElementById("nearHikeList"),status=document.getElementById("nearHikeStatus");
  if(pos.accuracy && pos.accuracy>5000){
@@ -462,6 +541,23 @@ async function discoverNearbyHikes(pos){
  if(!el)return;
  status.textContent=`Recherche à ${nearHikeRadius} km · GPS ±${pos.accuracy||"?"} m`;
  el.innerHTML='<div class="card"><p>🔎 Recherche d’itinéraires pédestres publics autour de votre position…</p><p class="meta">Plusieurs serveurs sont essayés automatiquement. Les durées et difficultés ne sont jamais inventées.</p></div>';
+
+ // Zone couverte par un fichier statique pré-téléchargé : recherche instantanée, sans réseau.
+ const staticZone=findStaticZoneForPos(pos);
+ if(staticZone){
+  try{
+   status.textContent=`Recherche instantanée (données hors-ligne : ${staticZone.name})…`;
+   const zoneData=await loadStaticZoneData(staticZone);
+   renderHikeRows(buildHikeRows(zoneData.relations,pos),status,el);
+  }catch(e){
+   status.textContent="Données hors-ligne indisponibles";
+   el.innerHTML=`<div class="card">
+     <p>⚠️ Le fichier de promenades hors-ligne pour ${escHtml(staticZone.name)} n’a pas pu être chargé.</p>
+     <p class="meta">Détail technique : ${escHtml(e && e.message ? e.message : String(e))}</p>
+   </div>`;
+  }
+  return;
+ }
 
  const radius=Math.round(nearHikeRadius*1000);
  // Requête en 3 temps pour ne jamais télécharger la géométrie complète d'un grand itinéraire
@@ -501,54 +597,7 @@ async function discoverNearbyHikes(pos){
 
   const geomQuery=`[out:json][timeout:25];relation(id:${candidateIds.join(",")});out geom;`;
   const result=await fetchOverpass(geomQuery,searchDeadline,onProgress(2));
-  const data=result.data;
-  const seen=new Set();
-
-  const rows=(data.elements||[]).map(x=>{
-   const t=x.tags||{};
-   const {members:cappedMembers,truncated}=capRouteMembers(x.members,HIKE_MAX_GEOMETRY_POINTS,pos);
-   const capped={...x,members:cappedMembers};
-   const rp=representativeRoutePoint(pos,capped);
-   if(!rp)return null;
-   const routeMeters=nearestRouteMeters(pos,capped);
-   const nearKm=routeMeters/1000;
-   const name=t.name||t.ref||"Itinéraire pédestre sans nom";
-   const key=(x.id+"|"+name).toLowerCase();
-   if(seen.has(key))return null;
-   seen.add(key);
-   // Longueur totale : on préfère la distance déclarée par la source (tag distance/length),
-   // plus fiable que la somme de la géométrie téléchargée qui peut être tronquée par le plafond
-   // de points ci-dessus. Si c'est très long, ce n'est pas "une promenade" ponctuelle mais un
-   // itinéraire de grande randonnée — on le signale au lieu de le faire passer pour une balade.
-   const declaredKm=parseFloat(t.distance||t.length);
-   const computedKm=sumLineMeters(routeGeometryGroups(capped))/1000;
-   const totalKm=Number.isFinite(declaredKm)?declaredKm:computedKm;
-   const extended=truncated||totalKm>25;
-   return {id:x.id,name,lat:rp.lat,lng:rp.lng,t,nearKm,totalKm,extended};
-  }).filter(Boolean)
-    .filter(x=>x.nearKm<=nearHikeRadius)
-    .sort((a,b)=>a.nearKm-b.nearKm)
-    .slice(0,25);
-
-  if(!rows.length){
-   status.textContent="Aucune promenade référencée dans ce rayon";
-   el.innerHTML=`<div class="card"><p>Aucun itinéraire pédestre public référencé n’a été trouvé dans un rayon de ${nearHikeRadius} km.</p><p class="meta">Cela ne veut pas dire qu’il n’existe aucune promenade à proximité : seulement qu’aucun itinéraire exploitable n’est référencé par la source dans ce rayon. Essaie 10 ou 20 km.</p></div>`;
-   return;
-  }
-
-  status.textContent=`${rows.length} promenade${rows.length>1?"s":""} trouvée${rows.length>1?"s":""}`;
-  el.innerHTML=rows.map(x=>`<div class="card nearbyHike">
-    <div class="titleRow"><h2>🥾 ${escHtml(x.name)}</h2><span class="distanceBadge">à ${x.nearKm<1?Math.round(x.nearKm*1000)+" m":x.nearKm.toFixed(1)+" km"} du tracé</span></div>
-    <div class="meta">${osmDistance(x.t)} · ${osmDuration(x.t)} · ${osmDifficulty(x.t)}</div>
-    ${x.extended?`<p class="meta">⚠️ Itinéraire étendu (≈ ${Math.round(x.totalKm)} km au total référencés) : seul un point du tracé est à ${x.nearKm.toFixed(1)} km, le reste peut être bien plus loin. Ouvrez « PARCOURS + TEMPS » pour voir la portion réelle proche de vous.</p>`:""}
-    ${x.t.description?`<p>${escHtml(x.t.description)}</p>`:""}
-    <div class="sourceTag">Source : OpenStreetMap · données contributives</div>
-    <div class="placeBtns">
-      <button class="ignBtn" onclick='openOsmHikeRoute(${x.id},${JSON.stringify(x.name)},${x.lat},${x.lng},${JSON.stringify(x.t.duration||"")},${JSON.stringify(x.t.distance||"")})'>🥾 PARCOURS + TEMPS</button>
-      <button class="ghost" onclick='openIgnCoords(${JSON.stringify(x.name)},${x.lat},${x.lng})'>🗺️ Point sur IGN</button>
-      <button class="primary" onclick="navigateTo('${x.lat},${x.lng}')">🚗 Aller au départ</button>
-    </div>
-  </div>`).join("");
+  renderHikeRows(buildHikeRows(result.data.elements,pos),status,el);
  }catch(e){
   status.textContent="Service de recherche indisponible";
   el.innerHTML=`<div class="card">
@@ -1110,7 +1159,7 @@ window.addEventListener("load",()=>{
 });
 
 /* ===== V0.3.4 : IGN + journée intelligente + historique ===== */
-const APP_VERSION = "0.5.12";
+const APP_VERSION = "0.5.13";
 let swRegistration = null;
 let refreshingForUpdate = false;
 
