@@ -1,4 +1,45 @@
-# Guadeloupe Compagnon v0.5.10
+# Guadeloupe Compagnon v0.5.11
+
+## v0.5.11 — tentatives multiples avec budget de temps total borné
+
+Après la v0.5.10, l'appel direct depuis le navigateur a été confirmé fonctionnel (CORS ouvert),
+mais `overpass-api.de`/`lz4.overpass-api.de` (même infrastructure) se sont révélés instables de
+façon **probabiliste** sous charge réelle : selon le moment, une même requête peut réussir, ou
+échouer avec 406, 429, 504, ou rester sans réponse — indépendamment du client (curl, Node,
+navigateur) et des en-têtes envoyés. Une seule tentative par miroir n'a donc qu'une chance
+partielle d'aboutir.
+
+**Ajout de tentatives automatiques (2 par miroir), avec une échéance totale unique et partagée**
+plutôt qu'un timeout par requête pris isolément :
+- chaque miroir est retenté une fois (2 tentatives au total) si le premier essai échoue, avec
+  une courte pause de 700 ms entre les deux — pour laisser une chance au serveur de sortir de
+  son état transitoire plutôt que de le re-solliciter instantanément ;
+- **une échéance unique de 35 s est partagée entre les 2 requêtes séquentielles de
+  `discoverNearbyHikes`** (tags+bb, puis géométrie) et tous leurs retries confondus — pas un
+  budget par requête, sinon les retries d'une étape pourraient faire exploser l'attente totale
+  perçue par l'utilisateur, exactement le problème déjà rencontré avec le design précédent ;
+  chaque tentative individuelle est bornée par le temps réellement restant sur cette échéance
+  partagée, jamais par un délai fixe indépendant ;
+- en dessous de 3 s de budget restant, l'app abandonne proprement (message clair) plutôt que de
+  lancer une nouvelle tentative vouée à l'échec ou de faire attendre indéfiniment.
+
+2 tentatives par miroir plutôt que 3 : avec 2 miroirs directs × 2 tentatives à 9 s chacune, le
+pire cas (tout échoue au maximum du délai) reste sous les 35 s du budget total ; 3 tentatives
+l'aurait dépassé.
+
+**Tests effectués** :
+- Logique validée par un test déterministe (scénarios contrôlés, sans dépendre de l'état réel
+  des serveurs) : le délai de 700 ms entre tentatives est bien respecté, le budget total de 35 s
+  n'est jamais dépassé même si tous les miroirs et le repli restent bloqués au maximum du délai,
+  et le budget est bien partagé entre les 2 étapes (une étape qui consomme du temps réduit
+  d'autant le temps disponible pour la suivante, au lieu de repartir sur une horloge fraîche).
+- Test en conditions réelles (10 lancers du pipeline complet) non concluant : après des heures
+  de tests cumulés sur `overpass-api.de` pendant tout ce diagnostic, l'IP de test a fini par être
+  limitée de façon quasi systématique par ce serveur (jusqu'à des requêtes isolées, sans aucune
+  logique de retry, qui n'obtenaient plus de réponse du tout) — un taux de succès mesuré dans
+  ces conditions n'aurait pas été représentatif de ce qu'un utilisateur réel, avec une IP neuve,
+  rencontrerait. Le taux de succès réel reste donc à confirmer sur le terrain (téléphone, IP
+  jamais sollicitée pour ces tests).
 
 ## v0.5.10 — appel Overpass direct depuis le navigateur : overpass-api.de bloque les IP cloud (donc Vercel)
 

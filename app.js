@@ -194,9 +194,30 @@ const DIRECT_OVERPASS_ENDPOINTS=[
  "https://lz4.overpass-api.de/api/interpreter"
 ];
 
-async function fetchOverpassDirect(query,endpoint){
+// overpass-api.de/lz4 (même infrastructure) échouent de façon probabiliste et intermittente
+// (406/429/504/silence) sous charge, indépendamment du client — observé de façon répétée en
+// conditions réelles, y compris depuis un vrai navigateur. Une seule tentative par miroir n'a
+// donc qu'une chance partielle d'aboutir ; on retente chaque miroir, avec une courte pause
+// entre les essais pour laisser une chance au serveur de sortir de son état transitoire plutôt
+// que de le re-solliciter instantanément.
+//
+// Tout ceci reste borné par une échéance UNIQUE, partagée entre les 2 requêtes séquentielles de
+// discoverNearbyHikes (tags+bb puis géométrie) : sans ça, des retries sur chaque requête
+// pourraient faire exploser l'attente totale perçue par l'utilisateur, exactement le problème
+// déjà rencontré. Mieux vaut échouer proprement avec un message clair après ~35s au total que
+// de faire attendre indéfiniment.
+const HIKE_SEARCH_TOTAL_BUDGET_MS=35000; // budget total pour l'ENSEMBLE du parcours (étape 1 + étape 2 + tous les retries)
+const HIKE_MIRROR_ATTEMPT_TIMEOUT_MS=9000; // durée max d'une tentative individuelle sur un miroir
+const HIKE_MIRROR_RETRY_DELAY_MS=700; // pause entre deux tentatives sur le même miroir (500ms-1s)
+const HIKE_MIRROR_MAX_ATTEMPTS=2; // tentatives par miroir avant de passer au suivant — 2 plutôt que 3 pour que le pire cas (2 miroirs directs × 2 tentatives à 9s) reste sous le budget total de 35s
+const HIKE_MIN_USEFUL_TIME_MS=3000; // en dessous de ce temps restant, inutile de retenter ou d'attendre : on abandonne proprement
+
+function sleep(ms){return new Promise(r=>setTimeout(r,Math.max(0,ms)));}
+function remainingBudgetMs(deadline){return deadline-Date.now();}
+
+async function fetchOverpassDirect(query,endpoint,timeoutMs){
  const controller=new AbortController();
- const timer=setTimeout(()=>controller.abort(),18000);
+ const timer=setTimeout(()=>controller.abort(),timeoutMs);
  try{
   const r=await fetch(endpoint,{
    method:"POST",
@@ -215,12 +236,12 @@ async function fetchOverpassDirect(query,endpoint){
  }
 }
 
-async function fetchOverpassViaProxy(query){
+async function fetchOverpassViaProxy(query,timeoutMs){
  // Filet de sécurité : ne retente QUE kumi.systems côté serveur (?mirrors=kumi). Retenter
  // overpass-api.de/lz4.overpass-api.de depuis Vercel donnerait le même échec que l'appel
  // direct qui vient de se produire (même blocage d'IP), juste plus lentement — inutile.
  const controller=new AbortController();
- const timer=setTimeout(()=>controller.abort(),60000);
+ const timer=setTimeout(()=>controller.abort(),timeoutMs);
  try{
   const r=await fetch("/api/hikes?mirrors=kumi&data="+encodeURIComponent(query),{
    method:"GET",
@@ -243,16 +264,41 @@ async function fetchOverpassViaProxy(query){
  }
 }
 
-async function fetchOverpass(query){
- for(const endpoint of DIRECT_OVERPASS_ENDPOINTS){
+// Tente un miroir plusieurs fois (avec pause entre essais), sans jamais dépasser l'échéance
+// partagée `deadline`. `attemptFn(timeoutMs)` doit lancer une tentative unique avec ce timeout.
+async function withRetries(attemptFn,deadline){
+ let lastErr=null;
+ for(let attempt=1;attempt<=HIKE_MIRROR_MAX_ATTEMPTS;attempt++){
+  if(attempt>1){
+   const beforeDelay=remainingBudgetMs(deadline);
+   if(beforeDelay<HIKE_MIN_USEFUL_TIME_MS)throw lastErr||new Error("Délai dépassé");
+   await sleep(Math.min(HIKE_MIRROR_RETRY_DELAY_MS,beforeDelay-HIKE_MIN_USEFUL_TIME_MS));
+  }
+  const remaining=remainingBudgetMs(deadline);
+  if(remaining<HIKE_MIN_USEFUL_TIME_MS)throw lastErr||new Error("Délai dépassé");
   try{
-   const data=await fetchOverpassDirect(query,endpoint);
+   return await attemptFn(Math.min(HIKE_MIRROR_ATTEMPT_TIMEOUT_MS,remaining));
+  }catch(err){
+   lastErr=err;
+  }
+ }
+ throw lastErr;
+}
+
+async function fetchOverpass(query,deadline){
+ for(const endpoint of DIRECT_OVERPASS_ENDPOINTS){
+  if(remainingBudgetMs(deadline)<HIKE_MIN_USEFUL_TIME_MS)break;
+  try{
+   const data=await withRetries(timeoutMs=>fetchOverpassDirect(query,endpoint,timeoutMs),deadline);
    return {data,endpoint};
   }catch(_){
    // on essaie le miroir direct suivant, puis le filet de sécurité serveur si tous échouent
   }
  }
- const data=await fetchOverpassViaProxy(query);
+ if(remainingBudgetMs(deadline)<HIKE_MIN_USEFUL_TIME_MS){
+  throw new Error("Délai dépassé");
+ }
+ const data=await withRetries(timeoutMs=>fetchOverpassViaProxy(query,timeoutMs),deadline);
  return {data,endpoint:"/api/hikes"};
 }
 
@@ -424,8 +470,13 @@ async function discoverNearbyHikes(pos){
   relation(around:${radius},${pos.lat},${pos.lng})["route"~"^(hiking|foot|walking)$"];
   out tags bb;`;
 
+ // Échéance UNIQUE partagée entre les 2 requêtes ci-dessous (tags+bb puis géométrie), retries
+ // inclus : garantit que l'attente totale perçue par l'utilisateur reste bornée à ~35s, quelle
+ // que soit la façon dont le temps se répartit entre les deux étapes.
+ const searchDeadline=Date.now()+HIKE_SEARCH_TOTAL_BUDGET_MS;
+
  try{
-  const tagsResult=await fetchOverpass(tagsQuery);
+  const tagsResult=await fetchOverpass(tagsQuery,searchDeadline);
   const candidateIds=selectNearbyRouteCandidates(tagsResult.data.elements||[],pos);
 
   if(!candidateIds.length){
@@ -434,8 +485,12 @@ async function discoverNearbyHikes(pos){
    return;
   }
 
+  if(remainingBudgetMs(searchDeadline)<HIKE_MIN_USEFUL_TIME_MS){
+   throw new Error("Délai dépassé après l'étape 1");
+  }
+
   const geomQuery=`[out:json][timeout:25];relation(id:${candidateIds.join(",")});out geom;`;
-  const result=await fetchOverpass(geomQuery);
+  const result=await fetchOverpass(geomQuery,searchDeadline);
   const data=result.data;
   const seen=new Set();
 
@@ -655,7 +710,7 @@ window.openOsmHikeRoute=async function(relId,name,lat,lng,durationTag,distanceTa
 
  try{
   const q=`[out:json][timeout:25];relation(${relId})->.r;(.r;way(r););out geom;`;
-  const result=await fetchOverpass(q);
+  const result=await fetchOverpass(q,Date.now()+HIKE_SEARCH_TOTAL_BUDGET_MS);
   const lines=collectRelationLines(result.data);
   if(!lines.length)throw new Error("Tracé non disponible");
   currentHikeLines=lines;
@@ -1045,7 +1100,7 @@ window.addEventListener("load",()=>{
 });
 
 /* ===== V0.3.4 : IGN + journée intelligente + historique ===== */
-const APP_VERSION = "0.5.10";
+const APP_VERSION = "0.5.11";
 let swRegistration = null;
 let refreshingForUpdate = false;
 
