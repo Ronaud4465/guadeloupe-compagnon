@@ -1,4 +1,35 @@
-# Guadeloupe Compagnon v0.5.11
+# Guadeloupe Compagnon v0.5.12
+
+## v0.5.12 — retour visuel progressif pendant les tentatives, et vérification du signalement v0.5.11
+
+Après la v0.5.11, deux points ont été signalés en conditions réelles : un échec après ~15s au
+lieu des ~35s de budget prévus, et un message de statut qui reste figé pendant toute l'attente.
+
+**Vérifié avec le vrai code de production** (les fonctions `fetchOverpass`/`withRetries` sont
+accessibles directement depuis la console du navigateur, `app.js` étant un script classique et
+non un module) dans un vrai Chromium, avec instrumentation de tous les appels réseau :
+- **Le budget de 35s n'est pas dépassé — mais ce n'est pas non plus une durée fixe.** C'est un
+  plafond maximum (pire cas si tous les miroirs restent muets jusqu'à leur timeout), pas une
+  durée garantie. Rejoué avec une échéance calculée correctement, le code réel s'est arrêté à
+  35013ms pile, comme attendu. Un échec plus rapide (~15s) signifie simplement que les serveurs
+  ont répondu avec une erreur plus vite ce jour-là, plutôt que de rester muets jusqu'au bout du
+  délai — c'est le comportement voulu, pas un raccourci anormal.
+- **Le texte figé, en revanche, était un vrai manque : jamais implémenté.** Le retour visuel
+  progressif demandé pendant les retries n'avait pas été codé en v0.5.11 (seule la logique de
+  retry elle-même l'avait été) — confirmé en traçant `#nearHikeStatus` toutes les 250ms pendant
+  35s : une seule valeur observée du début à la fin.
+
+**Ajout du retour visuel progressif** : `withRetries`/`fetchOverpass` acceptent maintenant un
+callback `onProgress`, appelé avant chaque tentative avec un message indiquant le miroir en
+cours et le numéro de tentative (ex. « [1/2] Recherche sur overpass-api.de… », puis « [1/2]
+Nouvelle tentative sur overpass-api.de (2/2)… », puis « [1/2] Recherche sur
+lz4.overpass-api.de… »). `discoverNearbyHikes` l'affiche dans `#nearHikeStatus` (préfixé de
+l'étape 1/2 ou 2/2 du pipeline), et `openOsmHikeRoute` (chargement du tracé complet) l'affiche
+de la même façon dans son propre encart.
+
+Testé en local (serveur statique + Chromium instrumenté, sur le code réel) : la séquence de
+messages s'affiche bien au fil des tentatives réelles, aux mêmes instants que les vrais appels
+réseau.
 
 ## v0.5.11 — tentatives multiples avec budget de temps total borné
 

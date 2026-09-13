@@ -264,9 +264,15 @@ async function fetchOverpassViaProxy(query,timeoutMs){
  }
 }
 
+function friendlyMirrorName(endpoint){
+ try{return new URL(endpoint,location.href).hostname;}catch(_){return endpoint;}
+}
+
 // Tente un miroir plusieurs fois (avec pause entre essais), sans jamais dépasser l'échéance
 // partagée `deadline`. `attemptFn(timeoutMs)` doit lancer une tentative unique avec ce timeout.
-async function withRetries(attemptFn,deadline){
+// `onProgress(message)`, si fourni, est appelé avant chaque tentative pour que l'utilisateur
+// voie que l'app travaille toujours plutôt qu'un message figé pendant tout le budget de 35s.
+async function withRetries(attemptFn,deadline,onProgress,label){
  let lastErr=null;
  for(let attempt=1;attempt<=HIKE_MIRROR_MAX_ATTEMPTS;attempt++){
   if(attempt>1){
@@ -276,6 +282,7 @@ async function withRetries(attemptFn,deadline){
   }
   const remaining=remainingBudgetMs(deadline);
   if(remaining<HIKE_MIN_USEFUL_TIME_MS)throw lastErr||new Error("Délai dépassé");
+  if(onProgress)onProgress(attempt===1?`Recherche sur ${label}…`:`Nouvelle tentative sur ${label} (${attempt}/${HIKE_MIRROR_MAX_ATTEMPTS})…`);
   try{
    return await attemptFn(Math.min(HIKE_MIRROR_ATTEMPT_TIMEOUT_MS,remaining));
   }catch(err){
@@ -285,11 +292,11 @@ async function withRetries(attemptFn,deadline){
  throw lastErr;
 }
 
-async function fetchOverpass(query,deadline){
+async function fetchOverpass(query,deadline,onProgress){
  for(const endpoint of DIRECT_OVERPASS_ENDPOINTS){
   if(remainingBudgetMs(deadline)<HIKE_MIN_USEFUL_TIME_MS)break;
   try{
-   const data=await withRetries(timeoutMs=>fetchOverpassDirect(query,endpoint,timeoutMs),deadline);
+   const data=await withRetries(timeoutMs=>fetchOverpassDirect(query,endpoint,timeoutMs),deadline,onProgress,friendlyMirrorName(endpoint));
    return {data,endpoint};
   }catch(_){
    // on essaie le miroir direct suivant, puis le filet de sécurité serveur si tous échouent
@@ -298,7 +305,7 @@ async function fetchOverpass(query,deadline){
  if(remainingBudgetMs(deadline)<HIKE_MIN_USEFUL_TIME_MS){
   throw new Error("Délai dépassé");
  }
- const data=await withRetries(timeoutMs=>fetchOverpassViaProxy(query,timeoutMs),deadline);
+ const data=await withRetries(timeoutMs=>fetchOverpassViaProxy(query,timeoutMs),deadline,onProgress,"le service de secours");
  return {data,endpoint:"/api/hikes"};
 }
 
@@ -474,9 +481,12 @@ async function discoverNearbyHikes(pos){
  // inclus : garantit que l'attente totale perçue par l'utilisateur reste bornée à ~35s, quelle
  // que soit la façon dont le temps se répartit entre les deux étapes.
  const searchDeadline=Date.now()+HIKE_SEARCH_TOTAL_BUDGET_MS;
+ // Retour visuel progressif : sans ça, le message reste figé pendant tout le budget de 35s et
+ // l'app a l'air bloquée alors qu'elle retente activement d'autres miroirs en arrière-plan.
+ const onProgress=(step)=>msg=>{status.textContent=`[${step}/2] ${msg}`;};
 
  try{
-  const tagsResult=await fetchOverpass(tagsQuery,searchDeadline);
+  const tagsResult=await fetchOverpass(tagsQuery,searchDeadline,onProgress(1));
   const candidateIds=selectNearbyRouteCandidates(tagsResult.data.elements||[],pos);
 
   if(!candidateIds.length){
@@ -490,7 +500,7 @@ async function discoverNearbyHikes(pos){
   }
 
   const geomQuery=`[out:json][timeout:25];relation(id:${candidateIds.join(",")});out geom;`;
-  const result=await fetchOverpass(geomQuery,searchDeadline);
+  const result=await fetchOverpass(geomQuery,searchDeadline,onProgress(2));
   const data=result.data;
   const seen=new Set();
 
@@ -710,7 +720,7 @@ window.openOsmHikeRoute=async function(relId,name,lat,lng,durationTag,distanceTa
 
  try{
   const q=`[out:json][timeout:25];relation(${relId})->.r;(.r;way(r););out geom;`;
-  const result=await fetchOverpass(q,Date.now()+HIKE_SEARCH_TOTAL_BUDGET_MS);
+  const result=await fetchOverpass(q,Date.now()+HIKE_SEARCH_TOTAL_BUDGET_MS,msg=>{fallback.innerHTML=`🔎 ${escHtml(msg)}`;});
   const lines=collectRelationLines(result.data);
   if(!lines.length)throw new Error("Tracé non disponible");
   currentHikeLines=lines;
@@ -1100,7 +1110,7 @@ window.addEventListener("load",()=>{
 });
 
 /* ===== V0.3.4 : IGN + journée intelligente + historique ===== */
-const APP_VERSION = "0.5.11";
+const APP_VERSION = "0.5.12";
 let swRegistration = null;
 let refreshingForUpdate = false;
 
