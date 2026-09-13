@@ -107,6 +107,16 @@ const HIKES={
  "ecrevisses":{difficulty:"Très facile",duration:"30 min A/R",distance:"415 m A/R",note:"Itinéraire aménagé depuis le parking ; données Rando Guadeloupe.",source:"Rando Guadeloupe"}
 };
 let ignMap=null,ignMarker=null,gpsMarker=null;
+function safeRemoveMap(){
+ // Une carte Leaflet plantée en cours de rendu (ex. fitBounds appelé avant que le conteneur
+ // n'ait une taille stable) peut lever une exception jusque dans .remove() lui-même — sans ce
+ // garde-fou, ignMap reste bloqué sur cette instance cassée et plus aucune carte suivante ne
+ // peut jamais s'ouvrir tant que la page n'est pas rechargée.
+ if(ignMap){
+  try{ignMap.remove();}catch(_){}
+  ignMap=null;
+ }
+}
 let liveWatchId=null,currentHikeLines=null;
 function setLiveTrackButton(active){
  const btn=document.getElementById('ignLiveTrack'); if(!btn)return;
@@ -813,31 +823,49 @@ window.openOsmHikeRoute=async function(relId,name,lat,lng,durationTag,distanceTa
   });
 
   setTimeout(()=>{
-   if(!window.L)return;
-   if(ignMap){ignMap.remove();ignMap=null;}
-   ignMap=L.map('ignMap',{zoomControl:true});
-   addRobustBaseLayers(ignMap);
+   // Tout ce bloc est protégé : une carte Leaflet à qui on demande fitBounds()/rendu de
+   // polylignes avant que son conteneur n'ait une taille stable (la modale vient tout juste de
+   // devenir visible) peut lever une exception interne à Leaflet. Sans ce try/catch, une telle
+   // exception restait silencieuse (carte vide, aucun message) ET laissait ignMap dans un état
+   // à moitié construit qui cassait ensuite TOUTES les ouvertures de carte suivantes (safeRemoveMap
+   // plantait à son tour sur cette instance corrompue).
+   try{
+    if(!window.L)return;
+    safeRemoveMap();
+    // .setView() DOIT être appelé dès la création, avant tout .addTo() : sans centre/zoom
+    // défini, les calculs internes de Leaflet (_pixelBounds) ne sont pas initialisés, et ajouter
+    // des polylignes (routeLayer) plante alors dans le moteur de rendu ("Cannot read properties
+    // of undefined (reading 'min')" dans _clipPoints). C'est la vraie cause racine du plantage —
+    // openIgnCoords/openIgnMap n'y sont jamais exposées car elles appellent setView() immédiatement.
+    // fitBounds() plus bas affinera la vue une fois le tracé réel connu.
+    ignMap=L.map('ignMap',{zoomControl:true}).setView([lat,lng],14);
+    ignMap.invalidateSize(true);
+    addRobustBaseLayers(ignMap);
 
-   const latlngs=lines.map(line=>line.map(p=>[p.lat,p.lng]));
-   const routeLayer=L.featureGroup();
-   latlngs.forEach(line=>{
-     L.polyline(line,{weight:9,opacity:.95,color:'#ffffff'}).addTo(routeLayer);
-     L.polyline(line,{weight:5,opacity:1,color:'#d40000'}).addTo(routeLayer);
-   });
-   routeLayer.addTo(ignMap);
+    const latlngs=lines.map(line=>line.map(p=>[p.lat,p.lng]));
+    const routeLayer=L.featureGroup();
+    latlngs.forEach(line=>{
+      L.polyline(line,{weight:9,opacity:.95,color:'#ffffff'}).addTo(routeLayer);
+      L.polyline(line,{weight:5,opacity:1,color:'#d40000'}).addTo(routeLayer);
+    });
+    routeLayer.addTo(ignMap);
 
-   const first=lines[0][0];
-   const last=lines[lines.length-1][lines[lines.length-1].length-1];
-   L.circleMarker([first.lat,first.lng],{radius:8,color:'#111',fillColor:'#fff',fillOpacity:1,weight:3})
-     .addTo(ignMap).bindPopup('Départ du parcours');
-   L.circleMarker([last.lat,last.lng],{radius:7,color:'#111',fillColor:'#111',fillOpacity:1,weight:2})
-     .addTo(ignMap).bindPopup('Fin / dernier point du parcours');
-   if(S.pos) L.circleMarker([S.pos.lat,S.pos.lng],{radius:8}).addTo(ignMap).bindPopup('Votre position GPS');
+    const first=lines[0][0];
+    const last=lines[lines.length-1][lines[lines.length-1].length-1];
+    L.circleMarker([first.lat,first.lng],{radius:8,color:'#111',fillColor:'#fff',fillOpacity:1,weight:3})
+      .addTo(ignMap).bindPopup('Départ du parcours');
+    L.circleMarker([last.lat,last.lng],{radius:7,color:'#111',fillColor:'#111',fillOpacity:1,weight:2})
+      .addTo(ignMap).bindPopup('Fin / dernier point du parcours');
+    if(S.pos) L.circleMarker([S.pos.lat,S.pos.lng],{radius:8}).addTo(ignMap).bindPopup('Votre position GPS');
 
-   const bounds=routeLayer.getBounds();
-   if(bounds.isValid())ignMap.fitBounds(bounds.pad(.08));
-   else ignMap.setView([lat,lng],14);
-   stabilizeLeafletMap(ignMap);
+    const bounds=routeLayer.getBounds();
+    if(bounds.isValid())ignMap.fitBounds(bounds.pad(.08));
+    else ignMap.setView([lat,lng],14);
+    stabilizeLeafletMap(ignMap);
+   }catch(err){
+    safeRemoveMap();
+    fallback.innerHTML='<b>⚠️ Carte indisponible</b><br>Le tracé a bien été chargé, mais son affichage sur la carte a échoué. Réessaie — si ça persiste, redémarre l’application.';
+   }
   },80);
  }catch(e){
   fallback.innerHTML='<b>⚠️ Tracé indisponible</b><br>La promenade est référencée, mais OpenStreetMap ne fournit pas actuellement une géométrie exploitable pour ce parcours.';
@@ -850,7 +878,7 @@ window.openIgnCoords=function(name,lat,lng){
  document.getElementById('ignMapModal').classList.remove('hidden');
  setTimeout(()=>{
   if(!window.L){document.getElementById('ignMapFallback').classList.remove('hidden');return;}
-  if(ignMap){ignMap.remove();ignMap=null;}
+  safeRemoveMap();
   ignMap=L.map('ignMap',{zoomControl:true}).setView([lat,lng],14);
   L.tileLayer('https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/png',{maxZoom:18,attribution:'IGN · Géoplateforme'}).addTo(ignMap);
   ignMarker=L.marker([lat,lng]).addTo(ignMap).bindPopup(name).openPopup();
@@ -864,7 +892,7 @@ window.openIgnMap=function(id){
  document.getElementById('ignMapModal').classList.remove('hidden');
  setTimeout(()=>{
   if(!window.L){document.getElementById('ignMapFallback').classList.remove('hidden');return;}
-  if(ignMap){ignMap.remove();ignMap=null;}
+  safeRemoveMap();
   ignMap=L.map('ignMap',{zoomControl:true}).setView([p.lat,p.lng],14);
   L.tileLayer('https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/png',{maxZoom:18,attribution:'© IGN / Géoplateforme'}).addTo(ignMap);
   ignMarker=L.marker([p.lat,p.lng]).addTo(ignMap).bindPopup(p.name).openPopup();
@@ -872,7 +900,7 @@ window.openIgnMap=function(id){
   stabilizeLeafletMap(ignMap);
  },80);
 };
-function closeIgn(){stopLiveTracking();currentHikeLines=null;document.getElementById('ignMapModal').classList.add('hidden');if(ignMap){ignMap.remove();ignMap=null}}
+function closeIgn(){stopLiveTracking();currentHikeLines=null;document.getElementById('ignMapModal').classList.add('hidden');safeRemoveMap();}
 window.closeIgn=closeIgn;
 function gpsMessage(e){
  if(!e)return "Erreur GPS inconnue.";
@@ -1177,7 +1205,7 @@ window.addEventListener("load",()=>{
 });
 
 /* ===== V0.3.4 : IGN + journée intelligente + historique ===== */
-const APP_VERSION = "0.5.14";
+const APP_VERSION = "0.5.15";
 let swRegistration = null;
 let refreshingForUpdate = false;
 

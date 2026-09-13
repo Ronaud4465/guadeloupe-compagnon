@@ -1,4 +1,46 @@
-# Guadeloupe Compagnon v0.5.14
+# Guadeloupe Compagnon v0.5.15
+
+## v0.5.15 — la carte du tracé plantait silencieusement et cassait toutes les ouvertures suivantes
+
+Après la v0.5.14, la première promenade ouverte affichait bien sa fiche texte mais **aucun
+tracé sur la carte** (carte vide) ; ensuite, plus aucune carte ne s'ouvrait du tout, même en
+rouvrant une promenade qui avait presque marché. Reproduit avec un vrai Chromium, console
+ouverte :
+
+**Cause n°1 (le plantage initial)** : dans `openOsmHikeRoute`, le dessin de la carte
+(`L.map(...)`, ajout des polylignes, `fitBounds`) s'exécute dans un `setTimeout(...,80)` **en
+dehors du `try/catch`** englobant. Le vrai bug : la carte était créée avec
+`L.map('ignMap',{zoomControl:true})` **sans jamais lui donner de centre/zoom initial** avant d'y
+ajouter les polylignes du tracé — sans `setView()` préalable, les calculs internes de Leaflet
+(`_pixelBounds`) ne sont pas initialisés, et ajouter le tracé plante alors dans le moteur de
+rendu (`Cannot read properties of undefined (reading 'min')` dans `_clipPoints`). Les fonctions
+sœurs `openIgnCoords`/`openIgnMap` n'ont jamais ce problème car elles appellent `.setView()`
+immédiatement après `L.map(...)`, avant d'ajouter quoi que ce soit.
+
+**Cause n°2 (la casse en cascade)** : cette exception, non interceptée, laissait `ignMap` sur
+une instance à moitié construite. À l'ouverture suivante, `ignMap.remove()` plantait à son tour
+sur cette instance corrompue — bloquant alors **toutes** les cartes suivantes jusqu'à
+rechargement complet de la page.
+
+Ce bug n'est pas spécifique aux données statiques (Wallonie) : le plantage est dans le code de
+rendu Leaflet, identique quelle que soit l'origine des données. Il est simplement devenu quasi
+systématique avec la recherche hors-ligne instantanée de la v0.5.13, qui a supprimé le délai
+réseau qui laissait auparavant, par hasard, le temps à la modale de se stabiliser avant que le
+code de carte ne s'exécute.
+
+**Correctifs** :
+- `L.map('ignMap',{zoomControl:true}).setView([lat,lng],14)` dès la création, avant tout ajout
+  de couche (comme les autres fonctions carte) — `fitBounds()` affine ensuite la vue une fois le
+  tracé réel connu.
+- Tout le bloc de rendu de la carte est maintenant dans son propre `try/catch`, avec un message
+  d'erreur clair affiché à l'utilisateur en cas d'échec plutôt qu'une carte vide silencieuse.
+- Nouvelle fonction `safeRemoveMap()` (remplace les 4 endroits qui faisaient
+  `ignMap.remove();ignMap=null` à la main) : une instance de carte corrompue ne peut plus jamais
+  bloquer les ouvertures suivantes.
+
+**Testé** (Chromium réel, scénario exact du signalement — ouvrir une promenade, en ouvrir une
+autre, rouvrir la première) : plus aucune exception, tracé correctement rendu sur la carte aux 3
+étapes (229 éléments de tracé affichés à chaque fois), aucune casse en cascade.
 
 ## v0.5.14 — "PARCOURS + TEMPS" refaisait un appel réseau (cassait le hors-ligne, et échouait pour toutes les promenades statiques)
 
