@@ -1,4 +1,30 @@
-# Guadeloupe Compagnon v0.5.15
+# Guadeloupe Compagnon v0.6.0
+
+## v0.6.0 — « Proposer ma journée » : classement transparent, étapes ajustables, alertes météo visibles
+
+Refonte complète de la proposition automatique de journée (onglet Aujourd'hui), en 5 points :
+
+1. **Classement transparent** : au lieu d'un choix opaque, l'app affiche maintenant le classement
+   complet des lieux éligibles au secteur du logement actif, du plus proche au plus loin
+   (`rankTodayCandidates()`). Par défaut, seuls les 2 premiers sont retenus dans la proposition,
+   mais tout le classement reste visible pour comprendre — et contester — ce choix.
+2. **Alertes météo visibles, jamais silencieuses** : un lieu de plein air (plage, rando...) sous
+   mauvaise météo prévue est signalé par un badge d'avertissement (`weatherWarning()`) à côté de
+   son rang — l'app ne le retire ni ne le déclasse elle-même, c'est à l'utilisateur de décider. Le
+   badge 💎/⭐ reste un simple repère d'info, sans influence sur l'ordre. Le classement lui-même
+   reste basé uniquement sur la distance (`scorePlace()`, utilisé ailleurs pour Découvrir et les
+   alternatives fatigue/météo, n'est pas modifié).
+3. **+ Ajouter une étape** : bouton dans la proposition qui ajoute le prochain rang non retenu —
+   utile les jours qui avancent plus vite que prévu.
+4. **Retirer une étape déjà acceptée** : une croix ✕ apparaît maintenant sur chaque étape du
+   parcours du jour, y compris après acceptation (pas seulement au moment de la proposition). Une
+   étape retirée redevient simplement disponible pour une prochaine proposition, sans rien à
+   refaire dans Découvrir.
+5. **Position du logement par rapport à l'ensemble des lieux du jour** : si le logement est nettement
+   excentré (ex. 9 lieux au nord-est, 1 au sud), le classement favorise légèrement la direction
+   dominante en cas d'écart de distance faible entre deux lieux — jamais au point de faire passer un
+   lieu nettement plus loin devant un lieu proche. Purement géométrique (cap depuis le logement,
+   secteurs de 45°), sans moteur de routage réel.
 
 ## v0.5.15 — la carte du tracé plantait silencieusement et cassait toutes les ouvertures suivantes
 

@@ -44,7 +44,7 @@ module.exports = async (req, res) => {
         headers: {
           "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
           "Accept": "application/json",
-          "User-Agent": "Guadeloupe-Compagnon/0.5.15"
+          "User-Agent": "Guadeloupe-Compagnon/0.6.0"
         },
         body: "data=" + encodeURIComponent(query),
         signal: controller.signal

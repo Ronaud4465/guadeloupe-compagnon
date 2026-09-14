@@ -1205,7 +1205,7 @@ window.addEventListener("load",()=>{
 });
 
 /* ===== V0.3.4 : IGN + journée intelligente + historique ===== */
-const APP_VERSION = "0.5.15";
+const APP_VERSION = "0.6.0";
 let swRegistration = null;
 let refreshingForUpdate = false;
 
@@ -1328,13 +1328,26 @@ function renderWeather(){
  el.innerHTML=`${w.kind==="sun"?"☀️":w.kind==="rain"?"🌧️":"🌥️"} <b>${t}</b> · ${w.temp} °C · nuages ${w.cloud}%<br><span class="meta">La météo influence le type d’activité, jamais le secteur du logement.</span>`;
 }
 function selectedPlaces(){return (S.today||[]).filter(eligibleToday).map(id=>all().find(p=>p.id===id)).filter(Boolean)}
-function routeHTML(list){
+function routeHTML(list,opts={}){
+ // opts.onRemove : nom (string) d'une fonction globale appelée avec l'id de l'étape à retirer —
+ // affiche une croix par étape (sauf le retour logement) si fourni. Sans opts, comportement
+ // strictement inchangé (utilisé tel quel par renderRouteSummary).
  if(!list.length)return ""; const h=activeHome();let prev=h,totalKm=0,totalDrive=0,totalVisit=0,out='<div class="routePlan"><b>🚗 Parcours du jour</b>';
- list.forEach((p,i)=>{const d=roadKm(prev,p),m=driveMin(prev,p);totalKm+=d;totalDrive+=m;totalVisit+=p.duration||60;out+=`<div class="routeStep"><b>${i?`${i+1}. `:"1. "}${p.name}</b><div class="routeArrow">${i?prev.name:"🏠 "+h.name} → ${p.name} : <b>${fmtKm(d)} km · ${m} min</b><br>⏱️ Sur place : <b>${pDurationText(p)}</b></div></div>`;prev=p});
+ list.forEach((p,i)=>{const d=roadKm(prev,p),m=driveMin(prev,p);totalKm+=d;totalDrive+=m;totalVisit+=p.duration||60;const removeBtn=opts.onRemove?`<button class="ghost stepRemove" onclick="${opts.onRemove}('${p.id}')" title="Retirer cette étape">✕</button>`:"";out+=`<div class="routeStep"><div class="routeStepHead"><b>${i?`${i+1}. `:"1. "}${p.name}</b>${removeBtn}</div><div class="routeArrow">${i?prev.name:"🏠 "+h.name} → ${p.name} : <b>${fmtKm(d)} km · ${m} min</b><br>⏱️ Sur place : <b>${pDurationText(p)}</b></div></div>`;prev=p});
  const d=roadKm(prev,h),m=driveMin(prev,h);totalKm+=d;totalDrive+=m;out+=`<div class="routeStep"><b>🏠 Retour au logement</b><div class="routeArrow">${prev.name} → ${h.name} : <b>${fmtKm(d)} km · ${m} min</b></div></div>`;
  out+=`<div class="adviceResult"><b>Total indicatif :</b> ${fmtKm(totalKm)} km · ${Math.round(totalDrive/5)*5} min de conduite · ${Math.round(totalVisit/30)/2} h sur les lieux.<br><small>Les temps routiers sont des estimations. Google Maps donnera le trafic réel au départ.</small></div></div>`;return out;
 }
-function renderRouteSummary(){const el=document.getElementById("dayRouteSummary");if(el)el.innerHTML=routeHTML(selectedPlaces())}
+function renderRouteSummary(){const el=document.getElementById("dayRouteSummary");if(el)el.innerHTML=routeHTML(selectedPlaces(),{onRemove:"removeTodayStop"})}
+// Retire une étape déjà acceptée, en cours de journée (pas seulement au moment de la
+// proposition) : elle repasse simplement dans le pool des lieux disponibles, exactement comme
+// une étape jamais ajoutée — donc automatiquement re-proposable dès demain, sans rien à refaire.
+function removeTodayStop(id){
+ S.today=(S.today||[]).filter(x=>x!==id);
+ if(isRevisit(id))S.revisit=(S.revisit||[]).filter(x=>x!==id);
+ save();
+ renderToday();
+}
+window.removeTodayStop=removeTodayStop;
 function setTodayPlan(ids,revisits=[]){S.today=[...new Set(ids)];S.revisit=[...new Set([...(S.revisit||[]),...revisits])];save();renderToday();renderRouteSummary()}
 function scorePlace(p){
  const h=activeHome(),sec=sectorStatus(p); if(sec.rank===2)return -9999; let s=100-sec.rank*35; const d=roadKm(h,p);s-=d*.7;
@@ -1343,16 +1356,98 @@ function scorePlace(p){
  const recent=(S.history||[]).slice(0,3).map(x=>all().find(p=>p.id===x.id)).filter(Boolean); if(recent.some(r=>r.lat&&p.lat&&roadKm(r,p)<7))s-=18;
  return s;
 }
+// Cap initial (grand cercle) du logement vers un lieu, en degrés (0=Nord, 90=Est...).
+function bearingDeg(a,b){
+ const toRad=d=>d*Math.PI/180;
+ const φ1=toRad(a.lat),φ2=toRad(b.lat),Δλ=toRad(b.lng-a.lng);
+ const y=Math.sin(Δλ)*Math.cos(φ2),x=Math.cos(φ1)*Math.sin(φ2)-Math.sin(φ1)*Math.cos(φ2)*Math.cos(Δλ);
+ return (Math.atan2(y,x)*180/Math.PI+360)%360;
+}
+const COMPASS_LABELS=["Nord","Nord-Est","Est","Sud-Est","Sud","Sud-Ouest","Ouest","Nord-Ouest"];
+function sectorIndex(bearing){return Math.floor(((bearing+22.5)%360)/45)}
+// Si le logement est nettement excentré par rapport à l'ensemble des candidats (ex. 9 lieux au
+// nord-est, 1 au sud), on le détecte ici — secteurs de 45°, direction "dominante" seulement si elle
+// concentre au moins 60% des lieux (sinon la distribution est trop équilibrée pour qu'une direction
+// ait du sens, on ne force rien).
+function dominantDirection(h,pts){
+ if(pts.length<4)return -1;
+ const counts=new Array(8).fill(0);
+ pts.forEach(p=>counts[sectorIndex(bearingDeg(h,p))]++);
+ let best=0;for(let i=1;i<8;i++)if(counts[i]>counts[best])best=i;
+ return counts[best]>=Math.ceil(pts.length*0.6)?best:-1;
+}
+// Classement principalement basé sur la distance au logement actif (jamais la météo ni la priorité
+// 💎, cf. weatherWarning/priorityBadge qui restent de simples signaux d'info) — contrairement à
+// scorePlace (toujours utilisé tel quel ailleurs : Découvrir, alternatives fatigue/météo).
+// Nuance géométrique : si le logement est excentré par rapport à l'ensemble des candidats du jour,
+// on avantage légèrement la direction dominante en cas d'écart de distance faible, pour suivre une
+// logique de trajet plutôt que des allers-retours — jamais au point de faire passer un lieu
+// nettement plus loin devant un lieu proche. Pas de vrai routage : simple cap géométrique.
+function rankTodayCandidates(){
+ const h=activeHome();
+ let list=all().filter(p=>!isDone(p.id)&&p.lat&&sectorStatus(p).rank<2).map(p=>({...p,distKm:roadKm(h,p)}));
+ const dom=dominantDirection(h,list);
+ if(dom>=0)list=list.map(p=>({...p,inMainDirection:sectorIndex(bearingDeg(h,p))===dom}));
+ list.mainDirectionLabel=dom>=0?COMPASS_LABELS[dom]:null;
+ const adjusted=p=>p.distKm*(p.inMainDirection?0.9:1);
+ list.sort((a,b)=>adjusted(a)-adjusted(b));
+ return list;
+}
+// Alerte visible (pas un simple badge décoratif) quand un lieu de plein air (plage, rando...)
+// tombe sur une météo prévue mauvaise — signalé, jamais décidé silencieusement par l'app :
+// l'utilisateur choisit lui-même de sauter ce rang ou de le remonter/descendre.
+function weatherWarning(p){
+ const wx=S.weatherNow; if(!wx)return "";
+ const s=weatherSensitivity(p); if(s!=="sun"&&s!=="mountain")return "";
+ if(wx.kind==="rain")return '<span class="sectorBadge weatherWarn">⚠️ Pluie prévue — activité de plein air</span>';
+ if(wx.kind==="cloud")return '<span class="sectorBadge weatherNeutral">🌥️ Ciel couvert — à surveiller</span>';
+ return "";
+}
+function priorityBadge(p){
+ if(p.priority==="gem")return '<span class="sectorBadge weatherGood">💎 Pépite</span>';
+ if(p.priority==="star")return '<span class="sectorBadge weatherNeutral">⭐ Repère</span>';
+ return "";
+}
 function proposeDay(){
- let c=all().filter(p=>!isDone(p.id)&&sectorStatus(p).rank<2).sort((a,b)=>scorePlace(b)-scorePlace(a)); if(!c.length)return openModal("Proposition","Il ne reste plus de visite non effectuée dans ce secteur.");
- let main=c[0]; const mainDur=main.duration||60; let plan=[main];
- // Maximum un complément, uniquement s'il est réellement proche et si la journée reste raisonnable.
- if(mainDur<260){let near=c.slice(1).filter(p=>(p.duration||60)<=180&&roadKm(main,p)<=8).sort((a,b)=>roadKm(main,a)-roadKm(main,b))[0];if(near&&(mainDur+(near.duration||60))<=360)plan.push(near)}
- const msg=routeHTML(plan)+`<p><b>Pourquoi :</b> secteur ${activeHome().name}, météo actuelle et regroupement géographique. Par défaut, une activité principale${plan.length>1?' + un complément proche':''}.</p>`;
+ const ranked=rankTodayCandidates();
+ if(!ranked.length)return openModal("Proposition","Il ne reste plus de visite non effectuée dans ce secteur.");
+ let plan=ranked.slice(0,2);
+
+ function renderProposal(){
+  const rankListHtml=ranked.map((p,i)=>{
+   const chosen=plan.some(x=>x.id===p.id);
+   const dirBadge=p.inMainDirection?'<span class="sectorBadge weatherNeutral" title="Direction dominante des lieux du jour par rapport au logement">🧭 Direction du jour</span>':"";
+   return `<div class="rankRow${chosen?' rankRowChosen':''}"><b>${i+1}.</b> ${escHtml(p.name)} — ${fmtKm(p.distKm)} km${chosen?' <span class="tag">Dans la proposition</span>':''} ${dirBadge} ${weatherWarning(p)} ${priorityBadge(p)}</div>`;
+  }).join("");
+  const planHtml=plan.length?routeHTML(plan,{onRemove:"dismissProposalStop"}):'<p class="meta">Plus aucun arrêt dans la proposition.</p>';
+  const hasMore=ranked.some(p=>!plan.some(x=>x.id===p.id));
+  const addBtnHtml=hasMore?'<button class="ghost wide" onclick="addNextProposalStop()">+ Ajouter une étape</button>':'';
+  const dirNote=ranked.mainDirectionLabel?`<p class="meta">🧭 Le logement est excentré : la plupart des lieux du jour sont plutôt au ${ranked.mainDirectionLabel}. Le classement favorise légèrement cette direction en cas de distances proches (jamais un lieu nettement plus loin ne passe devant un lieu proche).</p>`:"";
+  document.getElementById("modalText").innerHTML=
+   `<p><b>Classement par distance depuis ${escHtml(activeHome().name)}</b> (du plus proche au plus loin) :</p>`+
+   dirNote+
+   `<div class="rankList">${rankListHtml}</div>`+
+   planHtml+
+   addBtnHtml+
+   `<p class="meta">Par défaut : les 2 plus proches. Écartez une étape avec ✕, ajoutez la suivante du classement si la journée avance vite, ou choisissez vous-même en fonction des alertes météo ci-dessus.</p>`;
+ }
+
+ window.dismissProposalStop=function(id){
+  plan=plan.filter(p=>p.id!==id);
+  renderProposal();
+ };
+ // Ajoute le prochain rang non encore retenu — pour les journées qui avancent plus vite que prévu.
+ window.addNextProposalStop=function(){
+  const next=ranked.find(p=>!plan.some(x=>x.id===p.id));
+  if(next)plan.push(next);
+  renderProposal();
+ };
+
  openModal("✨ Proposition de journée","",[
-  {label:"✓ Utiliser cette proposition",go:()=>setTodayPlan(plan.map(p=>p.id))},
+  {label:"✓ Utiliser cette proposition",go:()=>{if(plan.length)setTodayPlan(plan.map(p=>p.id));}},
   {label:"Non, garder mes choix",go:()=>{}}
- ]);document.getElementById("modalText").innerHTML=msg;
+ ]);
+ renderProposal();
 }
 function fatigueAlternatives(){
  const origin=S.pos||coords(activeHome()); let c=all().filter(p=>!isDone(p.id)&&sectorStatus(p).rank<2&&p.lat).map(p=>({...p,near:roadKm(origin,p)})).filter(p=>p.near<16&&(p.cat||"").match(/Plage|Ville|Village|Jardin/)).sort((a,b)=>a.near-b.near).slice(0,4);
